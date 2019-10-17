@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1569493942544.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "948490461",
+    "id" : "521880D2",
+    "lastKnownWriteTime" : 1569498075,
+    "last_content_update" : 1569498075496,
+    "path" : "C:/Users/migue/Desktop/CUNEF/ProgramacionConR/Practica 2/Fibonacci.R",
+    "project_path" : "Fibonacci.R",
+    "properties" : {
+        "cursorPosition" : "26,1",
+        "notebook_format" : "html_document",
+        "scrollLine" : "12"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

@@ -1,0 +1,33 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1569497669597.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "23981CD9",
+    "lastKnownWriteTime" : 2314885530450146867,
+    "last_content_update" : 1569497669597,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "953BF9F8",
+        "caption" : "Calificaciones2019",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=Calificaciones2019&cache_key=953BF9F8",
+        "displayedObservations" : 58,
+        "environment" : "",
+        "expression" : "Calificaciones2019",
+        "object" : "Calificaciones2019",
+        "preview" : 0,
+        "totalObservations" : 58,
+        "variables" : 10
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

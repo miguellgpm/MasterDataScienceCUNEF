@@ -1,0 +1,72 @@
+
+library(readr)
+library(tidyverse)
+library(rmarkdown)
+
+calificaciones_ECO_2019 <- read_delim("C:/Users/migue/Desktop/CUNEF/ProgramacionConR/Practica 2/calificaciones ECO 2019.csv", ";", escape_double = FALSE, locale = locale(decimal_mark = ","), na = "0",trim_ws = TRUE)
+View(calificaciones_ECO_2019)
+
+# SE HA IMPORTADO LA BASE DE DATOS CON LOS VALORES NA DE LA VARIABLE "CALIFICACION" YA VACIOS (na="0")
+
+
+# VEMOS QUE TIPO DE VARIABLE ES CADA UNA
+str(calificaciones_ECO_2019)
+
+# A.1) CUANTOS ALUMNOS HAY EN TOTAL
+
+total_alumnos<-nrow(calificaciones_ECO_2019)
+cat("Hay",total_alumnos, "alumnos en total.")
+
+# A.2) NOTA MEDIA DEL EXAMEN SIN TENER EN CUENTA LOS NP
+
+presentados_EF<-subset(calificaciones_ECO_2019, calificaciones_ECO_2019$`Ex. JUNIO-12P`!="NA")
+View(presentados_EF)
+
+media_EFJ<-mean(presentados_EF$`Ex. JUNIO-12P`)
+cat("La nota media del examen de junio es",round(media_EFJ,2)) # REDONDEADA A 2 DECIMALES
+
+# B) Nombre de los que han aprobado el examen final a pesar de haber asistido menos de un 50% a las clases
+
+aprobados_menos50<-function(presentados_EF){
+  num.alumnos<-length(presentados_EF$`NOMBRE ALUMNO`)
+  lista_nombres<-c()
+  for (i in 1:num.alumnos){
+    if (presentados_EF$`Asistencia -1P`[i]<0.5 & presentados_EF$`Ex. JUNIO-12P`[i]>=6){
+      lista_nombres<-append(lista_nombres,presentados_EF$`NOMBRE ALUMNO`[i])
+    }
+  }
+  cat("Los alumnos que han aprobado el examen final con menos del 50% de asistencia son:")
+  print(lista_nombres)
+}
+
+aprobados_menos50(presentados_EF)
+
+# C) Completa la columna de calificacion con: Aprobado (5-6.9), Notable (7-8.9), Sobresaliente (9-10). Ten encuenta que las calificaciones así descritas deben darse sobre 10
+
+for (i in 1:nrow(calificaciones_ECO_2019)){
+  if (calificaciones_ECO_2019$CALIFICACION[i]=="SUSPENSO"){
+    calificaciones_ECO_2019$CALIFICACION[i]<-"SUSPENSO"
+  }
+  else {
+    if (calificaciones_ECO_2019$Nota_FINAL[i]>=9){
+      calificaciones_ECO_2019$CALIFICACION[i]<-"SOBRESALIENTE"
+    }
+    if (calificaciones_ECO_2019$Nota_FINAL[i]>=7 & calificaciones_ECO_2019$Nota_FINAL[i]<9){
+      calificaciones_ECO_2019$CALIFICACION[i]<-"NOTABLE"
+    }
+    if (calificaciones_ECO_2019$Nota_FINAL[i]>=5 & calificaciones_ECO_2019$Nota_FINAL[i]<7){
+      calificaciones_ECO_2019$CALIFICACION[i]<-"APROBADO"
+    }
+    if (calificaciones_ECO_2019$Nota_FINAL[i]<5){
+      calificaciones_ECO_2019$CALIFICACION[i]<-"SUSPENSO"
+    }
+  }
+}
+
+Calificaciones2019<-calificaciones_ECO_2019
+
+View(Calificaciones2019)
+
+# D) Guarda la tabla modificada en el proyecto Practica2 con el nombre Calificaciones2019.csv
+
+write.csv(Calificaciones2019, file="Calificaciones2019.csv")

@@ -1,0 +1,16 @@
+Agenda localidades
+
+def crear_agenda_localidades():
+    f = open('localidades.txt', encoding="utf8")
+    l = f.readlines()
+    agenda = {}
+    for linea in l[1:]:
+        datos = linea.split('|')
+        nombre = datos[0].strip() # elimina saltos y espacios
+        ayunta = datos[1].strip()
+        inf = datos[2].strip()
+        emer = datos[3].strip()
+        agenda[nombre] = {}
+        if ayunta != '':
+            agenda[nombre]['tel ayunt'] = ayunta
+    return agenda

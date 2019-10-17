@@ -1,0 +1,33 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1569496836718.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "5D239532",
+    "lastKnownWriteTime" : 2314885436531946289,
+    "last_content_update" : 1569496836718,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "C8820FB4",
+        "caption" : "calificaciones_ECO_2019",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=calificaciones_ECO_2019&cache_key=C8820FB4",
+        "displayedObservations" : "58",
+        "environment" : "",
+        "expression" : "calificaciones_ECO_2019",
+        "object" : "calificaciones_ECO_2019",
+        "preview" : "0",
+        "totalObservations" : "58",
+        "variables" : "10"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1569494690577.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1871705551",
+    "id" : "9982D252",
+    "lastKnownWriteTime" : 1569511053,
+    "last_content_update" : 1569511053240,
+    "path" : "C:/Users/migue/Desktop/CUNEF/ProgramacionConR/Practica 2/Notas.R",
+    "project_path" : "Notas.R",
+    "properties" : {
+        "cursorPosition" : "8,99",
+        "notebook_format" : "html_document",
+        "scrollLine" : "0"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
