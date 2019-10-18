@@ -1,0 +1,59 @@
+---
+title: "Iris"
+author: "Miguel López Garralón"
+date: "18/10/2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, message = FALSE}
+library(GGally)
+library(corrplot)
+library(PerformanceAnalytics)
+library(dplyr)
+library(tidyverse)
+```
+
+```{r, echo = FALSE, results = 'hide'}
+iris
+```
+
+```{r, echo = FALSE}
+nuevo_iris <- iris
+```
+
+Se renombran las variables.
+
+```{r, echo = FALSE}
+nuevo_iris <- rename(iris, Longitud_Sepalo = Sepal.Length, 
+                     Ancho_Sepalo = Sepal.Width, 
+                     Longitud_Petalo = Petal.Length, 
+                     Ancho_Petalo = Petal.Width)
+```
+
+Boxplot de las variables numéricas.
+
+```{r, echo = FALSE}
+boxplot(nuevo_iris[,1:4], main = 'Diagramas de cajas')
+```
+
+Gráfico de correlación.
+
+```{r, echo = FALSE}
+correlacion <- round(cor(nuevo_iris[,-5]), 1)
+
+corrplot(correlacion, method = "number", type = "upper")
+```
+
+Gráfico de dispersión por pares de las variables numéricas separado por especies.
+
+```{r, echo = FALSE}
+pairs(nuevo_iris[1:4], main = "rojo=setosa, verde=versicolor, azul=virginica", pch = 21,
+  bg = c("red", "green", "blue")[unclass(nuevo_iris$Species)])
+```
+
