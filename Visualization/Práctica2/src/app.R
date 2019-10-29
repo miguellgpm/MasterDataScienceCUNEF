@@ -1,7 +1,7 @@
 ######################################
-### AUTHOR: Miguel López Garralón  ###
+### AUTHOR: Miguel LÃ³pez GarralÃ³n  ###
 ### DATE: 29/10/2019               ###
-### TITLE: Práctica Reactividad    ###
+### TITLE: PrÃ¡ctica Reactividad    ###
 ######################################
 
 # librerías y bases de datos
@@ -19,9 +19,8 @@ data('Titanic')
 
 ui <- fluidPage(
 
-    # Application title
     titlePanel(
-        'Práctica Reactividad'
+        'PrÃ¡ctica Reactividad'
     ),
     sidebarLayout(
         sidebarPanel(
@@ -49,7 +48,6 @@ ui <- fluidPage(
 )
 
 
-# Define server logic required to draw a histogram
 server <- function(input, output) {
 
     output$resultadoElegido <- renderPrint({
