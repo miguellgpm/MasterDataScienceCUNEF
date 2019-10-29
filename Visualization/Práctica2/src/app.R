@@ -1,7 +1,7 @@
 ######################################
-### AUTHOR: Miguel LÃ³pez GarralÃ³n  ###
+### AUTHOR: Miguel López Garralón  ###
 ### DATE: 29/10/2019               ###
-### TITLE: PrÃ¡ctica Reactividad    ###
+### TITLE: Práctica Reactividad    ###
 ######################################
 
 # librerías y bases de datos
