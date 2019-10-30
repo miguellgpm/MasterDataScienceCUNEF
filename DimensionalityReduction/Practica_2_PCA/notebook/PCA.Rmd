@@ -1,0 +1,324 @@
+---
+title: "Factorial"
+author: "Miguel López Garralón"
+date: "25/10/2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, echo = FALSE, results = 'hide', warning = FALSE, message = FALSE}
+library(dplyr)
+library(tidyverse)
+library(ggplot2) # graficos
+library(FactoMineR) # PCA
+library(factoextra)
+library(skimr)
+library(psych) # KMO
+library(corrplot)
+library(readr)
+```
+
+
+
+```{r load data, echo = FALSE,results = 'hide', message = FALSE}
+ACPTIUSD <- read_delim("C:/Users/migue/Desktop/CUNEF/Tecnicas de agrupacion y reduccion/Practica 2/data/ACPTIUSD.csv", 
+";", escape_double = FALSE, trim_ws = TRUE)
+```
+
+# MISSING DATA
+
+Se eliminan todos los valores que tienen algún dato NA, ya que para obtener la matriz de correlaciones es necesario que los registros posean datos y, además, que sean numéricos.
+Tras la eliminación de dicho valores, la muestra queda reducida a 783 casos, por lo que no se hará división en parte de train y test para predecir el valor de los depósitos a 10 años por reducirse de forma muy significatvia el tamaño muestral.
+
+```{r omit, echo = FALSE, results = 'hide'}
+ACPTIUSD <- na.omit(ACPTIUSD)
+```
+
+
+# Análisis exploratorio
+
+```{r skim, echo = FALSE, results = 'hide'}
+skim(ACPTIUSD[,2:10])
+```
+
+## HISTOGRAMAS CON CURVA DE DENSIDAD
+
+### Depósito a 1 mes
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`DEPO 1M`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 1 mes", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`DEPO 1M`), sd = sqrt(var(ACPTIUSD$`DEPO 1M`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+
+### Depósito a 3 meses
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`DEPO 3M`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 3 meses", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`DEPO 3M`), sd = sqrt(var(ACPTIUSD$`DEPO 3M`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+### Depósito a 6 meses
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`DEPO 6M`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 6 meses", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`DEPO 6M`), sd = sqrt(var(ACPTIUSD$`DEPO 6M`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+
+### Depósito a 12 meses
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`DEPO 12M`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 12 meses", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`DEPO 12M`), sd = sqrt(var(ACPTIUSD$`DEPO 12M`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+### Depósito a 2 años
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`IRS 2Y`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 2 años", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`IRS 2Y`), sd = sqrt(var(ACPTIUSD$`IRS 2Y`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+### Depósito a 3 años
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`IRS 3Y`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 3 años", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`IRS 3Y`), sd = sqrt(var(ACPTIUSD$`IRS 3Y`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+### Depósito a 4 años
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`IRS 4Y`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 4 años", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`IRS 4Y`), sd = sqrt(var(ACPTIUSD$`IRS 4Y`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+### Depósito a 5 años
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`IRS 5Y`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 5 años", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`IRS 5Y`), sd = sqrt(var(ACPTIUSD$`IRS 5Y`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+
+### Depósito a 7 años
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`IRS 7Y`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 7 años", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`IRS 7Y`), sd = sqrt(var(ACPTIUSD$`IRS 7Y`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+### Depósito a 10 años
+
+```{r, echo = FALSE}
+hist(ACPTIUSD$`IRS 10Y`, density = 20, breaks = 20, prob = TRUE, 
+     xlab = "Depósito a 10 años", 
+     main = "normal curve over histogram") 
+    curve(dnorm(x, mean = mean(ACPTIUSD$`IRS 10Y`), sd = sqrt(var(ACPTIUSD$`IRS 10Y`))), 
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+
+Con los histogramas se puede ver que las variables no siguen una distribución normal.
+Sin embargo, debemos pasar al análisis de la correlación entre las variables para ver la relación entre las mismas, de forma que se pudiesen llevar a cabo unas técnicas u otras.
+
+# CORRELACIÓN
+
+
+```{r matriz correlacion, echo = FALSE, results = 'hide'}
+matriz_correlaciones <- cor(ACPTIUSD[,2:10],
+                            use = "pairwise.complete.obs")
+matriz_correlaciones
+```
+
+En el siguiente gráfico se aprecia que hay una alta correlación entre las variables. Se observa, además, que las variables de depósito de 1 mes y 3 meses tienen unas correlaciones más bajas con el resto de depósitos, sobre todo a partir de los depósitos a 12 meses o más (principalmente en el caso de los depósitos a 1 mes).
+Estos resultados en el análisis de las correlaciones nos plantean la posible relación entre las variables estudiadas.
+
+
+```{r correlacion, echo = FALSE}
+correlacion <- round(cor(ACPTIUSD[,2:10]), 1)
+
+corrplot(correlacion, method = "number", type = "upper")
+```
+
+
+# Determinante de la matriz de correlaciones
+
+```{r determinante matriz corr, echo = FALSE, results = 'hide'}
+det(matriz_correlaciones)
+```
+
+El determinante de la matriz de correlaciones muestra un resultado de 1.483166e-18, por lo que indica que existe alta multicolinealidad entre las variables. Este dato, junto a la alta correlación de las variables sugieren que un Análisis de Componentes Principales puede ser realizado. Para poder corroborar esto se realizan también las pruebas de esfericidad de Bartlett y KMO.
+
+
+# Prueba de esfericidad de Bartlett y KMO
+
+```{r bartlett, echo = FALSE, results = 'hide'}
+bartlett.test(ACPTIUSD[,2:10])
+```
+
+En la prueba de efericidad de Bartlett se obtiene un p-value de 2.2e-16, por lo que se debe rechazar la hipótesis nula de varianzas homogéneas. Además, refuerza lo visto anteriormente sobre la alta correlación positiva entre las distintas variables.
+
+En cuanto al KMO, se obtiene un valor de 0.87. Al ser este valor cercano a 1 y superior a 0.8 podemos afirmar, junto con las pruebas realizadas anteriormente, que es conveniente llevar a cabo un Análisis de Componentes Principales para las variables que nos encontramos en este data set.
+
+
+```{r KMO, echo = FALSE, results = 'hide'}
+KMO(ACPTIUSD[,2:10])
+```
+
+
+# Análisis de Componentes Principales (ACP)
+
+Se llevará a cabo el ACP con las variables del bono a 1 mes hasta el bono a 7 años. Aunque finalmente no se pueda predecir la variable del bono a 10 años como era la intención inicial, debido a que se ha reducido la muestra de forma considerable al eliminar los valores perdidos, se mantiene fuera dicha variable para realizar el ACP a la espera de obetener más datos y poder predecir sobre el bono a 10 años.
+
+
+```{r, echo = FALSE}
+acp_tiposInteres <- PCA(ACPTIUSD[,2:10], graph = T)
+```
+
+Según se ve en el gráfico, en el que se divide en dos dimensiones, la dimensión 1 explica un 81.29 % de la varianza, mientras la segunda dimensión explica un 17.58 % de la varianza. Por tanto, hay dos atributos (provenientes de las 9 variables numéricas) que explican el 98.87 % de la varianza.
+
+Se puede ver una primera división bastante clara en el eje vertical. En la parte superior se encuentran los depósitos desde 1 mes hasta 1 año, aunque este último aparece prácticamente sobre el eje horizontal, mientras en la parte inferior se encuentran los depósitos desde 2 años a los 7 años. Como primera aproximación, se ve una diferenciación en el corto y largo plazo de los depósitos.
+
+
+```{r autovalores, echo = FALSE, results = 'hide'}
+acp_tiposInteres$eig
+```
+
+Para complementar estos gráficos, se muestra a continuación el gráfico de sedimentación. En él, se puede ver de nuevo que la primera dimensión explica algo más de un 80 % de la varianza y la segunda dimensión casi el 20 %.
+
+
+```{r, echo = FALSE}
+fviz_eig(acp_tiposInteres, addlables = TRUE, hjust = -0.3) +
+  labs(title = 'Scree plot / Gráfico de sedimentación',
+       x = 'Dimensiones', y = '% Varianza explicada') +
+  theme_minimal()
+
+```
+
+
+
+```{r, echo = FALSE, results = 'hide'}
+acp_tiposInteres$var$coord
+```
+
+## Contribución de las variables a cada dimensión
+
+```{r contribución variables, echo = FALSE, results = 'hide'}
+acp_tiposInteres$var$contrib[,1:2]
+```
+
+### Contribución de las variables a la dimensión 1
+
+```{r}
+fviz_contrib(acp_tiposInteres, choice="var", axes = 1 )+
+        labs(title = "Contribuciones a la Dimensión 1")
+```
+
+
+En este gráfico observamos cómo contribuye cada variable la dimensión 1. Se puede apreciar como los bonos a medio y largo plazo (del bono a 6 meses hasta el bono a 7 años) contribuyen de forma muy similar a la dimensión 1, y de forma muy superior a los bonos a corto plazo (1 mes y 3 meses). 
+
+
+### Contribución de las variables a la dimensión 2
+
+```{r dimension 2, echo = FALSE}
+fviz_contrib(acp_tiposInteres, choice="var", axes = 2 )+
+        labs(title = "Contribuciones a la Dimensión 2")
+```
+
+Por otro lado, en la contribución de las varaibles a la dimensión 2 se establece de nuevo una clara diferenciación en los bonos al corto plazo (1 y 3 meses), que son los que aportan una mayor contribución a dicha dimensión, frente a los de medio y largo plazo.
+
+
+```{r, echo = FALSE, results = 'hide'}
+acp_tiposInteres$var$cos2
+```
+
+## Comunalidades
+
+En el siguiente gráfico, se puede apreciar a través de un gráfico de correlaciones lo explicadas que quedan las variables por cada una de las dimensiones. Este gráfico refuerza lo señalado con anterioridad sobre la división entre el corto y el medio-largo plazo en los bonos, aunque se debe señalar que el bono a 3 meses queda también mejor explicado por la dimensión 1, aunque de forma similar a la dimensión 2. Es decir, aunque el bono a 6 meses contribuye de forma muy importante a la dimensión 2, llega a quedar más explicada incluso por la dimensión 1 que por la 2. A pesar de esto, sigue siendo más relevante que contribuya más a la dimensión 2, que lo que queda explicada dentro de cada dimensión dicha variable. 
+
+
+```{r, echo = FALSE}
+corrplot(acp_tiposInteres$var$cos2, is.corr = F)
+```
+
+
+
+# Rotación VARIMAX
+
+```{r, echo = FALSE}
+library(stats) # varimax
+```
+
+
+La rotación varimax se realiza para facilitar la interpretación de los componentes o dimensiones obtenidas. Esta rotación puede hacer que la varianza total explicada por el conjunto de las dimensiones obtenidas cambie, e incluso que la varianza explicada por cada dimensión también varíe. De hecho, si nos fijamos en la siguiente tabla, se puede ver que la varianza total explicada por las dos dimensiones llega al 98.9 %, aunque en este caso es muy similar al 98.87 % sin rotar. Sin embargo, donde sí se ve un mayor cambio es en la varianza explicada por cada dimensión. La primera dimensión pasa a explicar un 66.8 % de la varianza, mientras anteriormente era más del 80%. En el caso de la dimensión 2, vemos que la varianza explicada ha pasado de casi el 20 % sin rotar hasta el 32.1 % con la rotación varimax.
+
+Sin embargo, al hacer dicha rotación y al cambiarse 
+
+
+```{r varimax, echo = FALSE, results = 'hide'}
+varimax(acp_tiposInteres$var$cor[,1:2])
+```
+
+
+# Predicción del bono a 10 años a través de una regresión de componentes principales
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+library(pls) # regresion lineal PCR
+```
+
+```{r, echo = FALSE}
+training <- ACPTIUSD[1:700, ]
+test     <- ACPTIUSD[701:783, ]
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+modelo_pcr <- pcr(formula = `IRS 10Y` ~ . -`X1`,
+                  data = training,
+                  ncomp = 2)
+# Test-MSE
+predicciones <- predict(modelo_pcr, newdata = test, ncomp = 2)
+test_mse <- mean((predicciones - test$`IRS 10Y`)^2)
+test_mse
+```
+
+Se utiliza un modelo de regresión de componentes principales para predecir los bonos a 10 años. De forma que se obtiene MSE = 0.05667397.
+
+
+
+
