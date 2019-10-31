@@ -1,10 +1,10 @@
 ######################################
-### AUTHOR: Miguel López Garralón  ###
+### AUTHOR: Miguel Lopez Garralon  ###
 ### DATE: 29/10/2019               ###
-### TITLE: Práctica Reactividad    ###
+### TITLE: Tarea Reactividad 1     ###
 ######################################
 
-# librerías y bases de datos
+# librerias y bases de datos
 
 library(shiny)
 library(datasets)
@@ -16,11 +16,13 @@ data('anscombe')
 data('trees')
 data('Titanic')
 
+Titanic <- data.frame(Titanic)
+
 
 ui <- fluidPage(
 
     titlePanel(
-        'PrÃ¡ctica Reactividad'
+        'Tarea Reactividad 1'
     ),
     sidebarLayout(
         sidebarPanel(
@@ -33,9 +35,9 @@ ui <- fluidPage(
                                        'TITANIC' = 'Titanic'),
                         selected = 'mpg'),
             selectInput('tipoResultado', label = h3('Elige tipo de resumen'),
-                        choices = list('resumen' = 'summary',
-                                       'cabecera' = 'head',
-                                       'tailnum' = 'tail'),
+                        choices = list('Mostrar summary' = 'summary',
+                                       'Mostrar primeras filas' = 'head',
+                                       'Mostrar ultimas filas' = 'tail'),
                         selected = 'summary'),
             actionButton('mostrarResultado',
                          label = h3('Mostrar Resultado'))
