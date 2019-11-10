@@ -1,0 +1,438 @@
+---
+title: "Práctica Final"
+author: "Miguel López Garralón"
+date: "6/11/2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Práctica Final de la asignatura Técnicas de Clasificación
+
+# Objetivo
+
+Clasificar a los clientes de una empresa del sector financiero en referencia a la concesión de la solicitud de crédito en tres categorías sobre posibilidad de impago:
+
+- Riesgo alto
+- Riesgo bajo
+- Riesgo medio
+
+
+```{r libraries, echo = FALSE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(dplyr)
+library(corrplot)
+library(readr)
+library(rsample)
+library(ggplot2)
+library(skimr)
+library(PerformanceAnalytics)
+library(readxl)
+library(car)
+library(MASS)
+library(caret) # confusion matrix
+library(rpart) # árboles
+library(rpart.plot) # árboles
+library(partykit) # árboles
+library(party) # árboles
+```
+
+```{r load data, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+datos <- read_excel("C:/Users/migue/Desktop/CUNEF/Tecnicas de clasificacion/PracticaFinal/data/Datos tarea1.xlsx",
+                    col_types = c("text", "numeric", "numeric",
+                                  "text", "text", "numeric", "numeric",
+                                  "numeric", "text"))
+```
+
+
+```{r names columns, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+names(datos) <- c("TIPO", "Ingresos", "Edad",
+                   "Sexo", "Estado_Civil",
+                   "Hijos", "Patrimonio",
+                   "Ratio_Endeudamiento", "Aversion_Riesgo")
+```
+
+
+```{r set seed, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+set.seed(1234)
+```
+
+
+# Apartado A
+
+### Analizar descriptivamente cada una de las variables en cada uno de los dos grupos. Calcular medidas más relevantes, comprobar normalidad y comentar los principales resultados.
+
+
+No se tendrán en cuenta las variables que no sean numéricas, ya que para poder realizar un análisis discriminante las variables deben seguir una distribución normal. Las variables categóricas no pueden seguir dicha distribución normal. Por ello, se eliminan las variables Sexo, EC (estado civil) y A (aversión al riesgo) para realizar este análisis.
+
+```{r datos_discr, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+datos_discr <- dplyr::select(datos, c(-Sexo, -Estado_Civil, -Aversion_Riesgo))
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+scatterplotMatrix(datos_discr[2:6])
+```
+
+Principales datos estadísticos:
+
+```{r, echo = FALSE}
+skim(datos_discr[2:6])
+```
+
+
+Realizamos el análisis del test de Shapiro Wilk para comprobar la normalidad de las variables.
+
+```{r normalidad todas, echo = FALSE}
+shapiro.test(datos_discr$Ingresos) # No sigue distribucion normal
+shapiro.test(datos_discr$Edad) # No sigue distribucion normal
+shapiro.test(datos_discr$Hijos) # No sigue distribucion normal
+shapiro.test(datos_discr$Patrimonio) # No sigue distribucion normal
+shapiro.test(datos_discr$Ratio_Endeudamiento) # SI
+```
+
+Sólo sigue una distribución normal el Ratio de endeudamiento sobre el patrimonio. Esto ya nos indica que un análisis deiscriminante no es el análisis más adecuado, ya que las variables no siguen distribución normal. A pesar de ello realizaremos un análisis de las variables por cada tipo de riesgo.
+
+```{r filter, echo = FALSE}
+alto_riesgo <- filter(datos_discr, TIPO == 'Alto riesgo')
+bajo_riesgo <- filter(datos_discr, TIPO == 'Bajo riesgo')
+medio_riesgo <- filter(datos_discr, TIPO == 'Riesgo medio')
+```
+
+## Analisis descriptivo alto riesgo
+
+```{r, echo = FALSE, warning = FALSE}
+scatterplotMatrix(alto_riesgo[2:6])
+```
+
+Principales indicadores estadísticos:
+
+```{r, echo = FALSE}
+skim(alto_riesgo[2:6])
+```
+
+Test de Shapiro Wilk:
+
+```{r, echo = FALSE}
+shapiro.test(alto_riesgo$Ingresos)
+shapiro.test(alto_riesgo$Edad)
+shapiro.test(alto_riesgo$Hijos)
+shapiro.test(alto_riesgo$Patrimonio)
+shapiro.test(alto_riesgo$Ratio_Endeudamiento)
+```
+
+Edad e Hijos no siguen una distribución normal.
+
+
+## Analisis descriptivo bajo riesgo
+
+```{r, echo = FALSE, warning = FALSE}
+scatterplotMatrix(bajo_riesgo[2:6])
+```
+
+Principales indicadores estadísticos:
+
+```{r, echo = FALSE}
+skim(bajo_riesgo[2:6])
+```
+
+Test de Shapiro Wilk:
+
+```{r, echo = FALSE}
+shapiro.test(bajo_riesgo$Ingresos)
+shapiro.test(bajo_riesgo$Edad)
+shapiro.test(bajo_riesgo$Hijos)
+shapiro.test(bajo_riesgo$Patrimonio)
+shapiro.test(bajo_riesgo$Ratio_Endeudamiento)
+```
+
+Edad e Hijos no siguen una distribución normal.
+
+
+## Analisis descriptivo riesgo medio
+
+```{r, echo = FALSE, warning = FALSE}
+scatterplotMatrix(medio_riesgo[2:6])
+```
+
+Principales indicadores estadísticos:
+
+```{r, echo = FALSE}
+skim(medio_riesgo[2:6])
+```
+
+Test de Shapiro Wilk:
+
+```{r, echo = FALSE}
+shapiro.test(medio_riesgo$Ingresos)
+shapiro.test(medio_riesgo$Edad)
+shapiro.test(medio_riesgo$Hijos)
+shapiro.test(medio_riesgo$Patrimonio)
+shapiro.test(medio_riesgo$Ratio_Endeudamiento)
+```
+
+Edad e Hijos no siguen una distribución normal.
+
+## Analisis visual de las diferencias en la distribucion por tipo
+
+Ingresos anuales para cada tipo
+
+```{r, echo = FALSE}
+boxplot(datos_discr$Ingresos ~ datos_discr$TIPO,
+        col = 'grey', main = 'Ingresos anuales por TIPO')
+```
+
+
+Edad para cada tipo
+
+```{r, echo = FALSE}
+boxplot(datos_discr$Edad ~ datos_discr$TIPO,
+        col = 'grey', main = 'Edad por TIPO')
+```
+
+
+Hijos para cada tipo
+
+```{r, echo = FALSE}
+boxplot(datos_discr$Hijos ~ datos_discr$TIPO,
+        col = 'grey', main = 'Hijos por TIPO')
+```
+
+Patrimonio para cada tipo
+
+```{r, echo = FALSE}
+boxplot(datos_discr$Patrimonio ~ datos_discr$TIPO,
+        col = 'grey', main = 'Patrimonio por TIPO')
+```
+
+Ratio endeudamiento para cada tipo
+
+```{r, echo = FALSE}
+boxplot(datos_discr$Ratio_Endeudamiento ~ datos_discr$TIPO,
+        col = 'grey', main = 'Ratio endeudamiento por TIPO')
+```
+
+```{r, echo = FALSE}
+library(lattice)
+parallelplot(~datos_discr[2:6] | TIPO, data = datos_discr)
+```
+
+
+Matriz de covarianzas
+
+```{r, echo = FALSE}
+cov(datos_discr[,2:6])
+```
+
+
+Según los análisis previos realizados, donde hemos observado las distribuciones de las variables teniendo en cuenta toda la muestra, sólo una de las variables cumplía el requisito de seguir una distribución normal. Por ello, no se puede o no se debe realizar un análisis discriminante.
+
+# Apartado B)
+
+### Aplicar un análisis discriminante a este caso justificando la selección de variables discriminantes. Interpretar la función discriminante y evaluar la importancia que tiene cada una de las variables discriminantes. Evaluar la capacidad predictiva del modelo.
+
+A pesar de que, como se ha visto anteriormente, no es aconsejable realizar un análisis discriminante debido a las características de las variables predictoras, se muestra a continuación cómo se realizaría dicho análisis. Debido a esto habrá problemas al utilizar el LDA o el QDA.
+
+
+```{r LDA, echo = FALSE}
+datos_discr.lda <- MASS::lda(TIPO ~ ., data = datos_discr)
+
+datos_discr.lda
+```
+
+El tanto por ciento de separación que consigue cada función discriminante es de 74.4% y 25.6% por cada una de ellas.
+Además, se ven diferencias en los indicadores estadísticos como se podía apreciar también en los gráficos previos.
+Por último, las variables que más influyen en las funciones de separación son los ingresos y el número de hijos.
+
+## Histogramas sobre como discrimina cada funcion del LDA
+
+### Primera Función
+
+```{r, echo = FALSE}
+datos_discr.lda.values <- predict(datos_discr.lda)
+
+ldahist(data = datos_discr.lda.values$x[,1], g = datos_discr$TIPO)
+```
+
+Se puede ver que la primera función separa bastante bien el primer
+tipo de riesgo del segundo (alto y bajo), pero tiene problemas con diferenciar el tercero (riesgo medio).
+
+### Segunda Función
+
+```{r, echo = FALSE}
+ldahist(data = datos_discr.lda.values$x[,2], g = datos_discr$TIPO)
+```
+
+
+En el caso de la segunda función separa algo más el tercer tipo (riesgo medio) del primero (riesgo alto), pero no es una separación demasiado buena. Esto se puede deber a la falta de normalidad en la distribución de las variables como se ha comentado anteriormente.
+
+Ubicación de cada registro en relación a las dos funciones del LDA:
+
+```{r, echo = FALSE}
+plot(datos_discr.lda.values$x[,1],datos_discr.lda.values$x[,2])
+text(datos_discr.lda.values$x[,1], datos_discr.lda.values$x[,2],
+     datos_discr$TIPO, cex = 0.7, pos = 4, col = "red")
+```
+
+Como se observa en este último gráfico, no se ve una separación excesivamente buena entre los distintos tipos de riesgo con el análisis discriminante.
+
+## Predicción
+
+### Matriz de confusión
+
+```{r confusion matrix, echo = FALSE}
+confusionMatrix(data = as.factor(predict(datos_discr.lda)$class),
+                reference = as.factor(datos_discr$TIPO),
+                dnn = c("Predicted", "Real cases"))
+```
+
+El accuracy de la predicción es de un 71.25%, es decir, acierta en ese porcentaje. Aunque se debe indicar que el intervalo de confianza se sitúa entre el 60.05 % y el 80.82%.
+
+Además, si nos fijamos la Sensitivity para los 3 grupos se puede apreciar que no es excesivamente alta, por lo que no es un modelo de clasificación demasiado bueno.
+
+### Predecir un nuevo caso:
+
+```{r, echo = FALSE, results = 'hide'}
+predict(datos_discr.lda,
+        newdata = data.frame(Ingresos = 19, Edad = 33, Hijos = 2,
+                             Patrimonio = 6,
+                             Ratio_Endeudamiento = 15))$class 
+```
+
+El riesgo de conceder un crédito a una persona con unos ingresos de 19000 euros anuales, con 33 años, 2 hijos, un patrimonio de 6000 euros y con un ratio de endeudamiento sobre el patrimonio del 15% es bajo según el modelo.
+
+# Apartado C)
+
+### Aplicar un árbol de clasificación a este caso justificando la selección de variables predictoras, utilizando una muestra del 80% para la estimación y del 20 % para la muestra de validación (seed=1234). Interpretar el árbol o árboles y evaluar la importancia que tiene cada una de las variables predictoras. Evaluar la capacidad predictiva del modelo.
+
+Se transforma la variable TIPO en un factor, al igual que las que también son categóricas en el dataframe, es decir, Sexo, Estado Civil y Aversión al Riesgo.
+
+```{r, echo = FALSE}
+datos$TIPO <- as.factor(datos$TIPO)
+datos$Sexo <- as.factor(datos$Sexo)
+datos$Estado_Civil <- as.factor(datos$Estado_Civil)
+datos$Aversion_Riesgo <- as.factor(datos$Aversion_Riesgo)
+```
+
+Para realizar el árbol de clasificación se eliminan las siguientes variables con motivo de la explicación que la precede a cada una:
+
+- Sexo: Debido a que realizar una discriminación por sexo a la hora de conceder un crédito o no es ilegal
+
+- Grado de aversion al riesgo: No se considera que sea una variable significativa a la hora de conceder un préstamo o no, ya que dependerá mas de otras variables que se encuentran en el dataframe.
+
+```{r, echo = FALSE}
+datos_clas <- dplyr::select(datos, c(-Sexo, -Aversion_Riesgo))
+```
+
+### Divisón de la población
+
+Se divide la población en train y test (80% train y 20% test)
+
+```{r, echo = FALSE}
+train <- sample(nrow(datos_clas), 0.8 * nrow(datos_clas))
+
+datos.train <- datos_clas[train,]
+
+datos.test <- datos_clas[-train,]
+```
+
+Observamos la distribución de la variables objetivo resultante de ambas muestras
+
+```{r, echo = FALSE}
+table(datos.train$TIPO)
+```
+
+
+```{r, echo = FALSE}
+table(datos.test$TIPO)
+```
+
+Al haber muy pocos casos las muestras no quedan balanceadas, ya que la parte de test solo cuenta con 16 casos. Esto implica que la clasificación será de peor calidad.
+
+## Árbol de clasificación
+
+```{r, echo = FALSE, results = 'hide'}
+arbol_datos <- rpart(TIPO ~ ., data = datos.train, method = "class",
+               parms = list(split = "information"))
+
+print(arbol_datos)
+```
+
+```{r, echo = FALSE, results = 'hide'}
+summary(arbol_datos)
+```
+
+
+### Tabla de complejidad paramétrica
+
+```{r, echo = FALSE}
+arbol_datos$cptable
+```
+
+Observando los valores de la complejidad paramétrica, nos quedaremos con el segundo valor, ya que es la primera división y en el tercer caso el error no llega a alcanzar al error del segundo, aunque por muy poco. A pesar de esta selección, el gráfico que se muestra a continuación nos indica que se podría realizar un árbol con una tercera ramificación. Dicho árbol se mostrará más adelante para mostrar las diferencias con el seleccionado, pero en base al criterio de selección por el que se ha optado nos mantendremos en dos ramas, es decir, en el segundo parámetro de complejidad.
+
+```{r, echo = FALSE}
+plotcp(arbol_datos)
+```
+
+### Podamos el arbol a partir del párametro de complejidad
+
+```{r, echo = FALSE}
+arbol.podado_datos <- prune(arbol_datos, cp = .17073171)
+
+plot(as.party(arbol.podado_datos))
+```
+
+Si interpretamos el gráfico, vemos que lo marca la diferencia entre el alto y el riesgo medio es poseer unos ingresos anuales por debajo de 16500 euros. En caso de tener menos de dichos ingresos, se ubican en dicha situación el 36% de los casos, y el tipo de perfil será de alto riesgo en cuanto a que pueda no devolver el préstamo en un 83% de dichos casos, siendo bajo en un 9%, al igual que de riesgo medio. Por otro lado, si supera esos ingresos anuales el riesgo pasa a ser medio en un 46% de los casos, mientras sería bajo en un 44% y alto en un 10% del 64% que quedan en dicha ramificación.
+
+
+Si escogiésemos el siguiente parámetro de complejidad, el árbol tendría más ramificaciones. Tal y como se ve a continuación.
+
+```{r, echo = FALSE}
+arbol.podado_datos2 <- prune(arbol_datos, cp = .04878049)
+
+plot(as.party(arbol.podado_datos2))
+```
+
+La interpretación sería igual que en el caso anterior, pero hay una rama más que interpretar en el lado de ingresos anuales mayores de 16500 euros. En ese caso, se produciría una nueva bifurcación en función de tener un ratio de endeudamiento sobre el patrimonio por debajo o por encima del 34.5%. En caso de ser inferior al 35%, habría un 12% de los casos en dicha situación del 64% del total de los casos, en los cuales el principal riesgo sería bajo, con un 88% de los casos, pero habría un 12% también catalogado como alto riesgo, y ninguno como medio. Mientras que si el ratio de endeudamiento supera el 35%, habría un 52% de los casos sobre el 64% total, en el cual predomina el riesgo medio con un 58%, con un 33% de bajo riesgo y un 9% de riesgo alto.
+
+Debe tenerse especial cautela con la interpretación de los porcentajes, ya que en suelen hacer referencia a un porcentaje de los casos sobre otro porcentaje de los casos totales, por lo tanto hablamos de porcentajes parciales.
+
+
+## Predicción con la muestra de test con el primer árbol
+
+```{r, echo = FALSE}
+arbol.pred_datos <- predict(arbol.podado_datos,
+                            datos.test, type = "class")
+
+arbol.perf_datos <- table(datos.test$TIPO, arbol.pred_datos,
+                    dnn = c("Actual", "Predicted"))
+
+arbol.perf_datos
+```
+
+
+Se puede ver que debido a la escasez de casos el arbol de clasifciación se equivoca bastante. Cataloga muy mal los de bajo riesgo, ya que a 6 perfiles que son realmente de bajo riesgo los clasifica como riesgo medio. Acierta únicamente el 41,17 % de los casos.
+
+## CONDITIONAL INFERENCE TREE
+
+```{r, echo = FALSE}
+fit.ctree_datos <- ctree(TIPO~., data = datos.train)
+
+plot(fit.ctree_datos, main = "Conditional Inference Tree")
+
+ctree.pred_datos <- predict(fit.ctree_datos, datos.test,
+                            type = "response")
+
+ctree.perf_datos <- table(datos.test$TIPO, ctree.pred_datos,
+                    dnn = c("Actual", "Predicted"))
+
+ctree.perf_datos
+```
+
+
+En el caso de realizar un árbol basado en inferencia, vemos que ajusta un poco más el límite de los ingresos anuales para hacer la división entre las dos ramas, pasando de 16500 euros a 16800. Por lo demás, podemos ver que es muy similar, incluso si nos fijamos en la matriz de confusión a la hora de predecir, clasifica de la misma manera.
