@@ -1,0 +1,258 @@
+---
+title: "Cuota mercado dentríficos"
+author: "Miguel López Garralón"
+date: "18/11/2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo = FALSE, message = FALSE, warning = FALSE}
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(forecast)
+library(xts)
+library(ggplot2)
+library(zoo)
+library(TSA)
+library(gridExtra)
+library(ggpubr)
+library(Hmisc)
+library(dynlm)
+library(tsoutliers)
+```
+
+
+adf.test para estacionaridad
+
+```{r load data, echo = FALSE}
+mercado_dentrif <- read_excel("data/data.xlsx")
+```
+
+
+
+```{r, echo = FALSE}
+mercado_dentrif$Date <- as.Date(paste(mercado_dentrif$Year,
+                                      mercado_dentrif$Week, 1, sep = "-"), "%Y-%U-%u")
+```
+
+```{r, echo = FALSE}
+xCrest <- xts((mercado_dentrif$Crest), order.by = mercado_dentrif$Date)
+xColgate <- xts((mercado_dentrif$Colgate), order.by = mercado_dentrif$Date)
+names(xCrest) <- "Crest"
+names(xColgate) <- "Colgate"
+```
+
+
+```{r, echo = FALSE}
+zCrest <- as.zoo(xCrest$Crest)
+zColgate <- as.zoo(xColgate$Colgate)
+```
+
+# Introducción
+
+Las compañías de pasta dental Colgate-Palmolive y Procter y Gamble protagonizaron en los años 50 y 60 una lucha por hacerse con la mayor cuota de mercado de dentrífico. La primera compañía con su pasta dental Colgate, mientras la segunda comercializaba Crest.
+En agosto de 1960 el Consejo de Terapéutica Dental de la American Dental Association (ADA) asoció a Crest con la ayuda para una higiene dental apropiada. Al hacer esto, la cuota de mercado de ambas compañías tuvieron un importante vuelco, perdiendo peso Colgate, que hasta ese momento había sido la compañia que había acaparado el mercado, y, por consiguiente, Crest tuvo un importante aumento.
+
+```{r, echo = FALSE}
+#Select number of observation to compare forecast
+cOmit <- 16
+
+#Data Size
+nObs <- length(zCrest)
+
+#sub_sample
+oCrest <- window(zCrest, start = index(zCrest[1]), end = index(zCrest[nObs-cOmit]))
+
+#out sample (real data to forecast performance)
+pCrest <- window(zCrest, start = index(zCrest[nObs - cOmit + 1]),
+                 end = index(zCrest[nObs]))
+
+```
+
+
+```{r, echo = FALSE}
+
+#Data Size
+nObs2 <- length(zColgate)
+
+#sub_sample
+oColgate <- window(zColgate, start = index(zColgate[1]),
+                   end = index(zColgate[nObs2 - cOmit]))
+
+#out sample (real data to forecast performance)
+pColgate <- window(zColgate, start = index(zColgate[nObs2 - cOmit + 1]),
+                 end = index(zColgate[nObs2]))
+```
+
+En los siguientes gráficos se puede ver la evolución a lo largo del tiempo de las dos compañías, la primera es la de Crest y la segunda la de Colgate. En ambos gráficos se han eliminado las últimas 16 semanas, que se utilizarán para saber cómo predice el modelo que se establezca.
+La línea de puntos marca el momento en el que se hizo el anuncio en el que se aconsejaba usar Crest para una adecuada higiene bucal.
+
+Se puede ver como en el caso de Crest la cuota de mercado sube, mientras que en el caso de Colgate, ocurre lo contrario.
+
+```{r, echo = FALSE}
+df_crest <- data.frame(value = as.vector(oCrest),
+                       time = time(oCrest))
+ggplot(df_crest) + geom_point(aes(x = time, y = value)) + 
+  geom_line(aes(x = time, y = value)) + 
+  ylab("Cuota de mercado") +
+  ggtitle("Cuota de mercado semanal Crest") + xlab("Semanas") +
+  geom_vline(xintercept = as.numeric(mercado_dentrif$Date[135]), linetype = 8)
+```
+
+```{r, echo = FALSE}
+df_colgate <- data.frame(value = as.vector(oColgate),
+                       time = time(oColgate))
+ggplot(df_colgate) + geom_point(aes(x = time, y = value)) + 
+  geom_line(aes(x = time, y = value)) + 
+  ylab("Cuota de mercado") +
+  ggtitle("Cuota de mercado semanal Colgate") + xlab("Semanas") +
+  geom_vline(xintercept = as.numeric(mercado_dentrif$Date[135]), linetype = 8)
+```
+
+
+
+## Autoarima
+
+
+### Crest
+
+```{r, echo = FALSE, results = 'hide'}
+modelo_Crest <- auto.arima(oCrest, seasonal = TRUE, lambda = "auto")
+summary(modelo_Crest)
+```
+
+El modelo ARIMA obtenido para la cuota de mercado de Crest es un (0,1,1), con un lambda de 0.6624958. Dicho modelo no tiene estacionalidad, por lo que sólo obtenemos los tres parámetros anteriores.
+
+En el gráfico se ven los residuos (o error) del modelo ARIMA para Crest se puede observar que es ruido blanco, es decir, que los errores actuales no dependen de los errores pasados, ya que no hay correlación entre ellos al no ser significativo, ya que se encuentran entre las dos bandas azules que se pueden observar en la parte inferior del gráfico.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+ggtsdisplay(modelo_Crest$residuals)
+```
+
+
+
+```{r, echo = FALSE, results = 'hide'}
+crest.arima <- forecast(modelo_Crest, h = 16)
+summary(crest.arima)
+```
+
+El modelo de predicción realizado para las últimas 16 semanas del periodo analizado tiene un AIC de -612.22, y un RMSE de 0.0453. Sin embargo, se puede observar en el gráfico que la predicción es plana, por lo tanto no es buena.
+
+```{r, echo = FALSE}
+plot(crest.arima)
+```
+
+
+
+### Colgate
+
+```{r, echo = FALSE, results = 'hide'}
+modelo_Colgate <- auto.arima(oColgate, seasonal = TRUE, lambda = "auto")
+summary(modelo_Colgate)
+```
+
+El modelo ARIMA obtenido para la cuota de mercado de Colgate es también un (0,1,1), con un lambda de 0.8694292. Dicho modelo no tiene estacionalidad, por lo que sólo obtenemos los tres parámetros anteriores, al igual que en el modelo ARIMA de Crest.
+
+Al igual que ocurría con los residuos en el modelo de Crest, los errores actuales no dependen de los errores pasados, ya que no hay correlación entre ellos al no ser significativo, porque se encuentran entre las dos bandas azules que se pueden observar en la parte inferior del gráfico.
+
+```{r, echo = FALSE, warning = FALSE}
+ggtsdisplay(modelo_Colgate$residuals)
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+colgate.arima <- forecast(modelo_Colgate, h = 16)
+summary(colgate.arima)
+```
+
+En la predicción para las 16 últimas semanas de la cuota de mercado de Colgate ocurre lo mismo que para Crest, la predicción es una línea recta, por lo tanto no es un buen modelo de predicción.
+En cuanto al AIC del modelo, es de -754.3.
+
+```{r, echo = FALSE}
+plot(colgate.arima)
+```
+
+# Outliers
+
+
+
+```{r, echo = FALSE, message = FALSE, results = 'hide', warning = FALSE}
+detectAO(modelo_Crest)
+detectIO(modelo_Crest)
+```
+
+
+```{r, echo = FALSE, message = FALSE, results = 'hide', warning = FALSE}
+detectAO(modelo_Colgate)
+detectIO(modelo_Colgate)
+```
+
+No se han encontrado valores atípicos, ni innovativos ni aditivos, por lo tanto sólo se tendrá en cuenta como efecto sobre la serie temporal el anuncio producido en la primera semana de agosto que se ha comentado previamente a la hora de realizar el modelo ARIMAX.
+
+
+# ARIMAX
+
+## Crest
+
+```{r, echo = FALSE, message = FALSE, results = 'hide'}
+crest.m1 <- arimax(as.double(zCrest), order = c(0,1,1),
+                   xtransf=data.frame(ADA = 1*(seq(zCrest) > 135),
+                                      ADA = 1*(seq(zCrest) == 135)),
+                   transfer=list(c(0,0),c(1,0)),
+                   method='ML')
+crest.m1
+```
+
+## Colgate
+
+
+```{r, echo = FALSE, message = FALSE, results = 'hide'}
+colgate.m1 <- arimax(as.double(oColgate), order = c(0,1,1),
+                   xtransf=data.frame(ADA = 1*(seq(oColgate) > 135),
+                                      ADA = 1*(seq(oColgate) == 135)),
+                   transfer=list(c(0,0),c(1,0)),
+                   method='ML')
+colgate.m1
+```
+
+
+
+```{r, echo = FALSE, message = FALSE, results = 'hide'}
+crest.m1$coef
+```
+
+
+
+
+```{r, echo = FALSE, message = FALSE}
+plot(crest.m1$coef,type="h")
+```
+
+
+
+```{r, echo = FALSE, message = FALSE}
+plot(colgate.m1$coef,type="h")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
