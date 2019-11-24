@@ -1,0 +1,374 @@
+---
+title: "Práctica Logística"
+author: "Miguel López Garralón"
+date: "16/11/2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo = FALSE, message = FALSE, warning = FALSE}
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(skimr)
+library(dummies)
+library(pscl)
+library(caret)
+library(dummies) # crete dummies
+library(verification) # curva ROC
+```
+
+# Objetivo
+
+El objetivo es poder clasificar de la mejor manera posible qué hogares son susceptibles de contratar un seguro de hogar privado en relación a una serie de datos o características propias de cada domicilio, tanto de las relacionadas con la infraestructura como de las referidas a la organización y composición familiar que los habitan.
+Esto se realizará mediante el uso de un modelo de regresión logística.
+
+# Selección de variables para el modelo
+
+No se tendrán en cuenta en el modelo las siguientes variables:
+
+1. Número de miembros no ocupados en el hogar (NUMNOCU): Se ha decidido eliminar esta variable ya que tenemos otras dos que son el número de miembros del hogar y el número de miembros que están ocupados en el hogar. Debido a esto, se considera que incluir esta variable sería duplicar información añadiendo más variables.
+
+2. Estado laboral del sustentador principal de la familia: Se considera que es más importante el número de personas que están ocupadas en el hogar, no únicamente el sustentador principal, por ello, esta variable se elimina del modelo.
+
+3. Ingresos mensuales del principal sustentador de la familia: Ocurre lo mismo que en el caso anterior, ya que hay otra variable que indica los ingresos totales mensuales de la familia.
+
+4. Año de la encuesta: Se elimina ya que todos los registros son tomados en el año 2018.
+
+5. Número secuencial que indica el orden del hogar en el fichero: Ya que es únicamente un identificador.
+
+6. Edad de la persona encuestada: Se elimina dicha variable ya que se considera que la edad de por sí no influye en contratar un seguro de hogar privado o no, sino que dicha decisión está basada en otras variables como puedan ser la propiedad o no del inmueble, los ingresos familiares y el tipo de familia entre otras, que aunque puedan tener relación con la edad, ésta no es una variable que influya en ello.
+
+7. Sexo de la persona encuestada: No se encuentra base para considerar que el sexo de una persona pueda determinar la decisión de contratar un seguro de hogar privado o no.
+
+
+```{r load data, echo = FALSE}
+seguroSalud <- read_excel("data/EPF2018_segurosalud.xlsx")
+```
+
+```{r select variables, echo = FALSE}
+seguroSalud <- dplyr::select(seguroSalud, c(-ANOENC, -NUMERO, -OCUSP, -INTERINPSP, -EDADSP, -SEXOSP))
+```
+
+
+```{r transform variables, echo = FALSE}
+seguroSalud$TAMAMU <- as.factor(seguroSalud$TAMAMU)
+seguroSalud$NMIEMB <- as.numeric(seguroSalud$NMIEMB)
+seguroSalud$NMIEM2 <- as.numeric(seguroSalud$NMIEM2)
+seguroSalud$Seguro_salud <- as.factor(seguroSalud$Seguro_salud)
+seguroSalud$TIPHOGAR3 <- as.numeric(seguroSalud$TIPHOGAR3)
+seguroSalud$TIPHOGAR <- seguroSalud$TIPHOGAR3
+seguroSalud$REGTEN <- as.numeric(seguroSalud$REGTEN)
+seguroSalud$SUPERF <- as.numeric(seguroSalud$SUPERF)
+seguroSalud$INTERIN <- as.numeric(seguroSalud$INTERIN)
+seguroSalud$ESTUDREDSP <- as.factor(seguroSalud$ESTUDREDSP)
+seguroSalud$NUMOCUP <- as.numeric(seguroSalud$NUMOCUP)
+seguroSalud <- dplyr::select(seguroSalud, -TIPHOGAR3)
+```
+
+# Transformación de las variables
+
+De todas las variables que se tendrán en cuenta para el modelo de regresión logística con el que poder clasificar a cada persona encuestada entre si contrataría un seguro de hogar privado o no, hay que transformar algunas de ellas para poder asumir el volumen de información que se posee y así poder interpretarlo de forma más sencilla.
+
+En el caso del tipo de hogar, se han establecido 5 categorías:
+
+1. Tipo de hogar 1: Hogar en el que habita únicamente un adulto.
+2. Tipo de hogar 2: Domicilio de pareja sin hijos
+3. Tipo de hogar 3: Pareja con hijos de hasta 18 años
+4. Tipo de hogar 4: Otras familias nucleares
+5. Tipo de hogar 5: Otros tipos de hogares
+
+
+```{r tipo hogar, echo = FALSE}
+seguroSalud$TIPHOGAR[seguroSalud$TIPHOGAR == 1 | seguroSalud$TIPHOGAR == 2 | seguroSalud$TIPHOGAR == 3 | seguroSalud$TIPHOGAR == 4] <- 1
+seguroSalud$TIPHOGAR[seguroSalud$TIPHOGAR == 5 | seguroSalud$TIPHOGAR == 6] <- 2
+seguroSalud$TIPHOGAR[seguroSalud$TIPHOGAR == 7 | seguroSalud$TIPHOGAR == 8 | seguroSalud$TIPHOGAR == 9] <- 3
+seguroSalud$TIPHOGAR[seguroSalud$TIPHOGAR == 10 | seguroSalud$TIPHOGAR == 11] <- 4
+seguroSalud$TIPHOGAR[seguroSalud$TIPHOGAR == 12] <- 5
+seguroSalud$TIPHOGAR <- as.factor(seguroSalud$TIPHOGAR)
+```
+
+Para la superficie del domicilio, se han establecido 2 categorías:
+
+1. Superficie 1: Hogar de menos 120 metros cuadrados.
+2. Superficie 2: Hogar de 120 metros cuadrados en adelante.
+
+
+```{r tramificar superficie, echo = FALSE}
+seguroSalud$SUPERF[seguroSalud$SUPERF < 120] <- 1
+seguroSalud$SUPERF[seguroSalud$SUPERF >= 120] <- 2
+seguroSalud$SUPERF <- as.factor(seguroSalud$SUPERF)
+```
+
+En cuanto al tamaño del municipio en el que se encuentra la vivienda se ha dividido en 5 categorías:
+
+1. Tamaño 1: Municipio de 100000 habitantes o más.
+2. Tamaño 2: Con 50000 y menos de 100000 habitantes.
+3. Tamaño 3: Con 20000 o más habitantes y menos de 50000.
+4. Tamaño 4: Con 10000 o más habitantes y menos de 20000.
+5. Tamaño 5: Con menos de 10000 habitantes.
+
+
+
+El régimen de tenencia del inmueble se ha dividido en 3 categorías:
+
+1. Régimen de tenencia 1: Vivienda en propiedad.
+2. Régimen de tenencia 2: Vivienda en alquiler.
+3. Régimen de tenencia 3: Vivienda cedida.
+
+
+```{r, echo = FALSE}
+seguroSalud$REGTEN[seguroSalud$REGTEN == 1 | seguroSalud$REGTEN == 2] <- 1
+seguroSalud$REGTEN[seguroSalud$REGTEN == 3 | seguroSalud$REGTEN == 4] <- 2
+seguroSalud$REGTEN[seguroSalud$REGTEN == 5 | seguroSalud$REGTEN == 6] <- 3
+seguroSalud$REGTEN <- as.factor(seguroSalud$REGTEN)
+```
+
+Los ingresos mensuales totales del hogar se han dividido en 5 categorías:
+
+1. Ingresos 1: Menos de 1000 € al mes.
+2. Ingresos 2: Entre 1000 y menos de 1500 € al mes.
+3. Ingresos 3: Entre 1500 y menos de 2000 € al mes.
+4. Ingresos 4: Entre 2000 y menos de 3000 € al mes.
+5. Ingresos 5: Más de 3000 € al mes.
+
+
+```{r, echo = FALSE}
+seguroSalud$INTERIN[seguroSalud$INTERIN == 1 | seguroSalud$INTERIN == 2] <- 1
+seguroSalud$INTERIN[seguroSalud$INTERIN == 3] <- 2
+seguroSalud$INTERIN[seguroSalud$INTERIN == 4] <- 3
+seguroSalud$INTERIN[seguroSalud$INTERIN == 5 | seguroSalud$INTERIN == 6] <- 4
+seguroSalud$INTERIN[seguroSalud$INTERIN == 7 | seguroSalud$INTERIN == 8 | seguroSalud$INTERIN == 9 | seguroSalud$INTERIN == 10] <- 5
+seguroSalud$INTERIN <- as.factor(seguroSalud$INTERIN)
+```
+
+El nivel de estudios de la persona encuestada se ha dividido en 4 categorías:
+
+1. Nivel estudios 1: Inferior a primera etapa de Educación Secundaria.
+2. Nivel estudios 2: Primera etapa de Educación Secundaria.
+3. Nivel estudios 3: Segunda etapa de Educación Secundaria.
+4. Nivel estudios 4: Educación Superior.
+
+Tras la recategorización de las variables que se acaban de citar, se ha pasado a convertir dichas variables en dicotómicas 1 y 0, o también llamadas dummies.
+
+
+```{r echo = FALSE, results = 'hide'}
+seguroSalud <- filter(seguroSalud, seguroSalud$NUMOCUP != -9 & seguroSalud$TIPHOGAR != -9)
+```
+
+
+# EDA
+
+```{r, echo = FALSE}
+tam_mun <- table(seguroSalud$Seguro_salud, seguroSalud$TAMAMU)
+barplot(tam_mun, main = 'Seguro de salud privado por tamaño de municipio',
+        ylab = 'Número de seguros', xlab = 'Tamaño de municipio')
+```
+
+```{r}
+tip_hogar <- table(seguroSalud$Seguro_salud, seguroSalud$TIPHOGAR)
+barplot(tip_hogar, main = 'Seguro de salud privado por tipo de hogar',
+        ylab = 'Número de seguros', xlab = 'Tipo de hogar')
+```
+
+
+```{r}
+reg_tenencia <- table(seguroSalud$Seguro_salud, seguroSalud$REGTEN)
+barplot(reg_tenencia, main = 'Seguro de salud privado por la tenencia del inmueble',
+        ylab = 'Número de seguros', xlab = 'Tenencia del inmuebe')
+```
+
+
+```{r}
+superficie_hogar <- table(seguroSalud$Seguro_salud, seguroSalud$SUPERF)
+barplot(superficie_hogar, main = 'Seguro de salud privado por la superficie del inmueble',
+        ylab = 'Número de seguros', xlab = 'Superficie del inmueble')
+```
+
+
+```{r}
+ingresos_hogar <- table(seguroSalud$Seguro_salud, seguroSalud$INTERIN)
+barplot(ingresos_hogar, main = 'Seguro de salud privado por los ingresos mensuales totales del domicilio por tramos',
+        ylab = 'Número de seguros', xlab = 'Ingresos mensuales totales del domicilio por tramos')
+```
+
+
+```{r}
+estudios_encuestado <- table(seguroSalud$Seguro_salud, seguroSalud$ESTUDREDSP)
+barplot(estudios_encuestado, main = 'Seguro de salud privado por nivel de estudios del encuestado',
+        ylab = 'Número de seguros', xlab = 'nivel de estudios del encuestado por tramos')
+```
+
+
+```{r, echo = FALSE}
+ggplot(seguroSalud, aes(Seguro_salud, NMIEMB)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(seguroSalud, aes(Seguro_salud, NMIEM2)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(seguroSalud, aes(Seguro_salud, NUMOCUP)) + geom_boxplot()
+```
+
+```{r dummies, echo = FALSE, message = FALSE, warning = FALSE}
+seguroSalud <- dummy.data.frame(seguroSalud)
+seguroSalud <- dummy.data.frame(seguroSalud,
+                                  names = "TAMAMU")
+seguroSalud <- dummy.data.frame(seguroSalud,
+                                  names = "TIPHOGAR")
+seguroSalud <- dummy.data.frame(seguroSalud,
+                                  names = "REGTEN")
+seguroSalud <- dummy.data.frame(seguroSalud,
+                                  names = "SUPERF")
+seguroSalud <- dummy.data.frame(seguroSalud,
+                                  names = "INTERIN")
+seguroSalud <- dummy.data.frame(seguroSalud,
+                                  names = "ESTUDREDSP")
+```
+
+
+```{r skim, echo = FALSE, results = 'hide'}
+skim(seguroSalud)
+```
+
+
+```{r ver NA, echo = FALSE, results = 'hide'}
+sapply(seguroSalud, function(x) sum(is.na(x)))
+```
+
+
+
+# Modelo de regresión logística
+
+
+```{r train y test, echo = FALSE, results = 'hide'}
+set.seed(16112019)
+
+train <- sample(nrow(seguroSalud), 0.7 * nrow(seguroSalud))
+
+seguroSalud.train <- seguroSalud[train,]
+
+seguroSalud.test <- seguroSalud[-train,]
+
+
+nrow(seguroSalud.train)
+```
+
+
+```{r, echo = FALSE}
+modelo1 <- glm(Seguro_salud ~. -TAMAMU5 -ESTUDREDSP1 -INTERIN1 -REGTEN1
+               -SUPERF1 -TIPHOGAR1,
+               family = binomial(link= 'logit'),
+               data = seguroSalud.train)
+summary(modelo1)
+```
+
+Se puede observar en la gráfica superior que la mayoría de las variables son significativas. Más abajo, analizamos los ODDS Ratio obtenidos para cada variable. En el caso de las variables dummies incluidas, como puede ser el tipo de hogar, se puede ver que los hogares de pareja sin hijos (TIPHOGAR2) tiene un ODDS Ratio de 0.857 respecto a los hogares de un solo adulto (TIPHOGAR1), lo que implica que es menos probable que los hogares de pareja sin hijos tengan un seguro de hogar privado en comparación con hogares de un solo adulto. Para variables numéricas, como el número de miembros en el hogar menores de 14 años (NMIEM2), el ODDS Ratio es de 1.168, por lo que por cada hijo menor de 14 años que se sume, el ODDS Ratio aumenta el valor mostrado, lo que significa que es más probable que un hogar tenga un seguro de hogar privado por cada hijo menor de 14 que tenga.
+Los valores más destacados son los ingresos totals del hogar de más de 3000 euros al mes (INTERIN5), donde encontramos un ODDS Ratio de 9.61 en comparación con unos ingresos totales del hogar de menos de 1000 euros al mes (INTERIN1). Todas las variables dummies asociadas a los ingresos totales mensuales del hogar son significativas en comparación con la categoría de referencia, que se deja fuera del modelo (INTERIN1), además, todas las dummies de los ingresos tienen valores superiores a 1 en los ODDS Ratio, por lo que todos tienen mayor probabilidad de tener contratado un seguro de hogar privado que los hogares que ingresan menos de 1000 euros al mes.
+En el caso de las dummies relacionadas con el nivel de estudios de la persona encuestada, vemos que ocurre exactamente lo mismo que con los ingresos totales mensuales del hogar, aunque los ODDS Ratio obtenidos comparados con la categoría de referencia, inferior a la primera etapa de Educación Secundaria (ESTUDREDSP1), son menores que para el nivel de ingresos totales al mes por hogar. 
+
+
+```{r, echo = FALSE}
+exp(coef(modelo1))
+```
+
+
+```{r anova, echo = FALSE}
+anova(modelo1, test = "Chisq")
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+format(pR2(modelo1), scientific = F)
+```
+
+La R cuadrado de Nagelkerke es utilizada para saber la bonanza del modelo, cuanto más cercano es el valor a 1, mejor será el modelo. En este caso, nos encontramos con un valor de 0.169. Para seleccionar el punto de corte podemos fijarnos en el siguiente gráfico, donde encontramos la frecuencia de los valores predichos en función de la probabilidad que se elija como punto de corte. Debido a esto, se ha seleccionado el corte en 0.3.
+
+```{r, echo = FALSE}
+hist(predict(modelo1,type = "response"))
+```
+
+```{r, echo = FALSE}
+prob.modelo1.insample <- predict(modelo1, type = "response")
+predicted.modelo1.insample <- prob.modelo1.insample > 0.3
+predicted.modelo1.insample <- as.numeric(predicted.modelo1.insample)
+```
+
+
+# Confussion Matrix dentro de la muestra
+
+```{r, echo = FALSE}
+confusionMatrix(data = as.factor(predicted.modelo1.insample),
+                reference = as.factor(seguroSalud.train$Seguro_salud),
+                dnn = c("Predicted", "Real cases"))
+```
+
+
+
+```{r, echo = FALSE}
+fitted.results <- predict(modelo1,
+                          newdata = subset(seguroSalud.test,
+                                         select = -Seguro_salud),
+                          type = 'response')
+fitted.results <- ifelse(fitted.results > 0.3, 1, 0)
+```
+
+
+
+```{r, echo = FALSE, results = 'hide'}
+logit.perf <- table(seguroSalud.test$Seguro_salud,
+                    fitted.results, dnn = c("Actual", "Predicted"))
+
+logit.perf
+```
+
+
+```{r, echo = FALSE}
+misClasificError <- mean(fitted.results != seguroSalud.test$Seguro_salud)
+print(paste('Accuracy',1-misClasificError))
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+prob.modelo1.outsample <- predict(modelo1,
+                                   seguroSalud.test, type = "response")
+predicted.modelo1.outsample <-  prob.modelo1.outsample > 0.3
+predicted.modelo1.outsample <- as.numeric(predicted.modelo1.outsample)
+table(seguroSalud.test$Seguro_salud, predicted.modelo1.outsample,
+      dnn = c("Truth","Predicted"))
+```
+
+
+# Confussion Matrix de la parte de test
+
+
+```{r, echo = FALSE}
+confusionMatrix(data = as.factor(predicted.modelo1.outsample),
+                reference = as.factor(seguroSalud.test$Seguro_salud),
+                dnn = c("Predicted", "Real cases"))
+```
+
+La matriz de confusión para la parte de test muestra un accuracy muy similar al de la parte de training (0.8966 y 0.898 respectivamente), por lo que no hay overfitting en el modelo. Con este valor, podemos afirmar que el modelo clasifica de forma muy satisfactoria, ya que sólo clasifica mal al 10.3 % de los casos. De forma más específica, acierta en un 97.5 % de los casos en los que han contratado un seguro de hogar privado, es decir, los verdaderos positivos.
+
+```{r, echo = FALSE, results = 'hide'}
+mean(ifelse(seguroSalud.test$Seguro_salud != predicted.modelo1.outsample, 1, 0))
+```
+
+# CURVA ROC
+
+```{r, echo = FALSE, warning = FALSE}
+roc.plot(seguroSalud.test$Seguro_salud == '1', prob.modelo1.outsample)$roc.vol
+```
+
+La Curva Roc es utilizada para ver lo bueno que es el modelo de clasificación elaborado a través de la regresión logística. Examinando el área que queda por debajo de la curva representada, vemos que tiene un valor de 0.744, por lo que podemos volver a señalar que es un modelo aceptable, ya que se encuentra por encima de 0.7. Este valor, cuanto más cercano a 1 mejor es el modelo, siendo un muy buen modelo los que superan el 0.9.
+
+
