@@ -1,0 +1,432 @@
+---
+title: "Los coches del jefe"
+author: "Miguel López Garralón"
+date: "17/11/2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+library(haven)
+library(corrplot)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(skimr)
+library(factoextra)
+library(FactoMineR)
+library(cluster)
+```
+
+
+```{r echo = FALSE}
+tterreno <- read_sav("C:/Users/migue/Desktop/CUNEF/Tecnicas de agrupacion y reduccion/Practica3/tterreno.sav")
+```
+
+
+```{r echo = FALSE}
+names(tterreno) <- c('marca', 'modelo', 'precio', 'cilindros', 'cilindrada',
+                              'potencia', 'revoluciones', 'peso', 'plazas',
+                              'consumo_90', 'consumo_120', 'consumo_urbano',
+                              'velocidad_maxima', 'aceleracion', 'tiempo_aceleracion')
+```
+
+
+# Objetivo
+
+El objetivo de este informe es poder mostrar cuál es la distribución más eficiente de los distintos coches con los que contamos entre los diferentes garajes existentes. Los coches se repartirán de acuerdo a una serie de características, de forma tal que los vehículos con unas prestaciones similares se encontrarán ubicados en un mismo garaje, con lo cual sabiendo el tipo de coche que se desee utilizar o buscar en cada momento estarán clasificados de acuerdo a dichas características, facilitando el acceso y localización de los mismos.
+
+# Variables seleccionadas y descartadas
+
+Inicialmente, la base de datos que recoge los registros de los 125 coches todoterreno cuenta con 15 características distintas de cada vehículo. A continuación se detallan las variables que se tendrán en cuenta para llevar a cabo la clasificación de los coches.
+
+## Variables seleccionadas
+
+Precio, cilindradad en cm cúbicos, potencia en CV, revoluciones por minuto, peso, plazas, consumo de combustible a 120 km/h, consumo de combustible en ciudad y velocidad máxima.
+
+Las variables que se han seleccionado para realizar la clasificación muestran diferentes características relevantes sobre los vehículos. Por un lado, nos encontramos con las variables referidas a la potencia del coche, como puedan ser la cilindrada, velocidad, revoluciones por minuto y la propia potencia; por otro lado, podemos ver características relacionadas con la eficiencia en el funcionamiento del vehículo, como son las medidas del consumo de combustible. Por último, se puede ver las dimensiones del coche con las variables que indican el número de plazas y el peso.
+
+
+## Variables descartadas
+
+- Marca y modelo del coche: La marca se ha descartado ya que los distintos tipos de coche de una marca varían mucho entre un modelo y otro, por lo que se considera que la marca no es una característica que ofrezca una información demasiado relevante en comparación con el resto. En el caso del modelo del coche, ocurre algo similar que con la marca en el sentido de que el resto de características nos dan una información más precisa de las prestaciones de los vehículos y, también, que hay un número de distintos modelos bastante elevado.
+- Número de cilindros: Se ha descartado ya que la cilindrada y la potencia muestran unos datos muy similares a la información que puede aportar el número de cilindros que posee el coche. De hecho, las dos variables mencionadas y el número de cilindros suelen estar relacionados, en el sentido de que a mayor número de cilindros mayor cilindrada y mayor potencia.
+- Consumo de combustible a 90 km/h: Se elimina ya que lo más habitual suele ser tener en cuenta el consumo en carretera, que queda reflejado con la variable del consumo de combustible a 120 km/h, y el consumo de combustible en ciudad. Por tanto, esta variable estaría en medio de ambas, sin aportar una información adicional de valor.
+- Tiempo de aceleración: Se elimina debido a que en los vehículos todoterrenos tiene más relevancia la potencia que la aceleración, ya que no se busca que sean rápidos, si no que tengan una alta capacidad de tracción debido a los terrenos donde se utilizan.
+- Aceleración: Debido al alto número de valores perdidos (más de un tercio de la muestra) se ha decidido eliminar dicha variable.
+
+
+
+```{r, echo = FALSE}
+View(tterreno)
+```
+
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+skim(tterreno)
+```
+
+```{r, echo = FALSE}
+tterreno$plazas <- as.numeric(tterreno$plazas)
+```
+
+
+## Tratamiento de valores perdidos
+
+
+Se ha podido observar que las variables que tienen valores perdidos de las que han sido seleccionadas para realizar la clasificación de los vehículos son las siguientes:
+
+- Consumo de combustible a 120 km/h: 15 valores perdidos
+
+- Consumo de combustible urbano: 7 valores perdidos
+
+- Peso: 2 valores perdidos
+
+- Velocidad máxima: 3 valores perdidos
+
+
+```{r, echo = FALSE}
+tterreno$peso <- replace_na(tterreno$peso, 1850)
+```
+
+### Peso
+
+En el caso de la variable del peso, se sustituyen los dos valores perdidos que existen por 1850 kg, ya que dos coches de la misma marca y modelo similar tienen dicho peso.
+
+### Velocidad máxima
+
+Para los valores ausentes en la variable de la velocidad máxima, se ha seguido el mismo procedimiento que con el peso, imputando los valores de los modelos similares de la misma marca que sí tenían registrado el valor de la velocidad máxima.
+
+
+```{r, echo = FALSE, results = 'hide'}
+is.na(tterreno$velocidad_maxima)
+```
+
+```{r, echo = FALSE, results = 'hide'}
+tterreno[105:106,]
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+tterreno[114,]
+```
+
+```{r, echo = FALSE}
+tterreno$velocidad_maxima[105:106] <- replace_na(tterreno$velocidad_maxima[105:106],
+                                                 148)
+```
+
+```{r, echo = FALSE}
+tterreno$velocidad_maxima[114] <- replace_na(tterreno$velocidad_maxima[114],
+                                                 135)
+```
+
+
+
+```{r, echo = FALSE, results = 'hide'}
+is.na(tterreno$consumo_120)
+```
+
+
+
+```{r, echo = FALSE, results = 'hide'}
+tterreno[c(1,2,3,19,26,75,76,78,77,79,91,122,123,124,125),]
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+consumo_120_marca <- tterreno %>%
+  group_by(marca) %>%
+  summarize(mean_120 = mean(consumo_120, na.rm = TRUE))
+consumo_120_marca
+```
+
+```{r, echo = FALSE, results = 'hide'}
+list(mean(tterreno$consumo_120, na.rm = TRUE),
+       mean(tterreno$consumo_urbano, na.rm = T))
+
+```
+
+### Consumo de combustible a 120 km/h y en entorno urbano
+
+Para completar los valores ausentes en las variables de consumo de combustible a 120 km/h y el consumo urbano se ha seguido el siguiente procedimiento:
+
+1. Se ha observado la marca de los casos que tienen valores perdidos en dichas variables.
+
+2. Obtención de la media de dichas variables para cada marca.
+
+3. En caso de que todos los valores en las variables de interés para una marca estén ausentes, se imputa el valor medio total de dichas características. En caso de que no todos sean ausentes, se imputa el valor medio de las variables de interés de la marca a la que pertenece el vehículo.
+
+```{r, echo = FALSE}
+tterreno$consumo_120 <- ifelse(test = (tterreno$marca == 1 & is.na(tterreno$consumo_120)),
+                            yes = mean(tterreno$consumo_120, na.rm = TRUE), no = tterreno$consumo_120)
+```
+
+```{r, echo = FALSE}
+tterreno$consumo_120 <- ifelse(test = (tterreno$marca == 17 & is.na(tterreno$consumo_120)),
+                            yes = mean(tterreno$consumo_120, na.rm = TRUE), no = tterreno$consumo_120)
+```
+
+```{r, echo = FALSE}
+tterreno$consumo_120 <- ifelse(test = (tterreno$marca == 5 & is.na(tterreno$consumo_120)),
+                            yes = 13.74, no = tterreno$consumo_120)
+```
+
+
+```{r, echo = FALSE}
+tterreno$consumo_120 <- ifelse(test = (tterreno$marca == 7 & is.na(tterreno$consumo_120)),
+                            yes = 12, no = tterreno$consumo_120)
+```
+
+
+```{r, echo = FALSE}
+tterreno$consumo_120 <- ifelse(test = (tterreno$marca == 11 & is.na(tterreno$consumo_120)),
+                            yes = 12.48, no = tterreno$consumo_120)
+```
+
+
+```{r, echo = FALSE}
+tterreno$consumo_120 <- ifelse(test = (tterreno$marca == 13 & is.na(tterreno$consumo_120)),
+                            yes = 12.6, no = tterreno$consumo_120)
+```
+
+
+
+```{r, echo = FALSE, results = 'hide'}
+is.na(tterreno$consumo_urbano)
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+tterreno[c(19,75,76,77,78,79,116),]
+```
+
+```{r, echo = FALSE, results = 'hide'}
+consumo_urbano_marca <- tterreno %>%
+  group_by(marca) %>%
+  summarize(mean_urbano = mean(consumo_urbano, na.rm = TRUE))
+consumo_urbano_marca
+```
+
+
+```{r, echo = FALSE}
+tterreno$consumo_urbano <- ifelse(test = (tterreno$marca == 5 & is.na(tterreno$consumo_urbano)),
+                            yes = 16.2, no = tterreno$consumo_urbano)
+```
+
+
+```{r, echo = FALSE}
+tterreno$consumo_urbano <- ifelse(test = (tterreno$marca == 11 & is.na(tterreno$consumo_urbano)),
+                            yes = 12.19, no = tterreno$consumo_urbano)
+```
+
+
+```{r, echo = FALSE}
+tterreno$consumo_urbano <- ifelse(test = (tterreno$marca == 16 & is.na(tterreno$consumo_urbano)),
+                            yes = 12.22, no = tterreno$consumo_urbano)
+```
+
+
+
+```{r, echo = FALSE}
+tterreno_final <- select(tterreno, c(3,5,6,7,8,9,11,12,13))
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+skim(tterreno_final)
+```
+
+```{r, echo = FALSE, results = 'hide'}
+sum(is.na(tterreno_final))
+```
+
+# Análisis exploratorio de los datos
+
+## Correlación
+
+
+```{r, echo = FALSE}
+correlacion <- round(cor(tterreno_final), 1)
+
+corrplot(correlacion, method = "circle", type = "upper")
+```
+
+```{r, echo = FALSE}
+par(mfrow = c(2,2))
+hist(tterreno_final$precio, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Precio", 
+     main = "Distribución del precio") 
+    curve(dnorm(x, mean = mean(tterreno_final$precio),
+                sd = sqrt(var(tterreno_final$precio))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+hist(tterreno_final$cilindrada, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Cilindrada", 
+     main = "Distribución de la cilindrada") 
+    curve(dnorm(x, mean = mean(tterreno_final$cilindrada),
+                sd = sqrt(var(tterreno_final$cilindrada))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+hist(tterreno_final$potencia, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Potencia", 
+     main = "Distribución de la potencia") 
+    curve(dnorm(x, mean = mean(tterreno_final$potencia),
+                sd = sqrt(var(tterreno_final$potencia))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+hist(tterreno_final$revoluciones, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Revoluciones", 
+     main = "Distribución de las revoluciones") 
+    curve(dnorm(x, mean = mean(tterreno_final$revoluciones),
+                sd = sqrt(var(tterreno_final$revoluciones))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+
+```{r, echo = FALSE}
+par(mfrow = c(2,2))
+hist(tterreno_final$peso, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Peso", 
+     main = "Distribución del peso") 
+curve(dnorm(x, mean = mean(tterreno_final$peso),
+            sd = sqrt(var(tterreno_final$peso))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+hist(tterreno_final$plazas, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Plazas", 
+     main = "Distribución de las plazas") 
+curve(dnorm(x, mean = mean(tterreno_final$plazas),
+            sd = sqrt(var(tterreno_final$plazas))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+hist(tterreno_final$consumo_120, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Consumo a 120 km/h", 
+     main = "Distrib. consumo 120 km/h") 
+curve(dnorm(x, mean = mean(tterreno_final$consumo_120),
+            sd = sqrt(var(tterreno_final$consumo_120))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+hist(tterreno_final$consumo_urbano, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Consumo en ciudad", 
+     main = "Distrib. consumo urbano") 
+curve(dnorm(x, mean = mean(tterreno_final$consumo_urbano),
+            sd = sqrt(var(tterreno_final$consumo_urbano))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+
+```{r, echo = FALSE}
+hist(tterreno_final$velocidad_maxima, density = 20, breaks = 10, prob = TRUE, 
+     xlab = "Velocidad máxima", 
+     main = "Distribución de la velocidad") 
+    curve(dnorm(x, mean = mean(tterreno_final$velocidad_maxima),
+                sd = sqrt(var(tterreno_final$velocidad_maxima))),
+      col = "darkblue", lwd = 2, add = TRUE, yaxt = "n")
+```
+
+```{r}
+tterreno_wos <- tterreno_final
+```
+
+
+Para llevar a cabo un análisis cluster se procede a escalar las variables para que se encuentren en la misma magnitud de medida.
+
+```{r escalado, echo = FALSE}
+tterreno_final <- scale(tterreno_final)
+tterreno_final <- as.data.frame(tterreno_final)
+```
+
+
+
+# Cluster
+
+```{r, echo = FALSE}
+q.dist <- get_dist(tterreno_final, method = "pearson") 
+```
+
+
+```{r, echo = FALSE}
+fviz_dist(q.dist, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"), lab_size = 7)
+```
+
+
+
+```{r, echo = FALSE, results = 'hide'}
+tterreno_final.cor <- cor(t(tterreno_final), method = "pearson") 
+round(tterreno_final.cor[1:nrow(tterreno_final), 1:nrow(tterreno_final)], 2)
+
+```
+
+
+
+```{r, echo = FALSE}
+dist.eucl <- daisy(tterreno_final, metric = c("euclidean"), stand = FALSE)
+```
+
+
+
+```{r, echo = FALSE}
+corrplot(as.matrix(dist.eucl), is.corr = FALSE, method = "color", type="lower", diag=F, order="hclust", tl.cex=0.4, tl.col="blue")
+
+```
+
+
+
+```{r, echo = FALSE}
+plot(hclust(dist.eucl, method = "ward.D2"), cex=0.7, main="Dendrograma", ylab="Anchura", xlab="Análisis cluster aplicando Ward sobre matriz de distancias euclídeas")
+```
+
+
+
+```{r, echo = FALSE}
+fviz_nbclust(x = tterreno_final, FUNcluster = kmeans, method = "wss", k.max = 15, 
+             diss = get_dist(tterreno_final, method = "euclidean"), nstart = 50)
+```
+
+
+```{r, echo = FALSE}
+tterreno.eclust <- eclust(tterreno_final, FUNcluster = "kmeans", stand=TRUE, hc_metric="euclidean", nstart=25, k = 7)
+```
+
+```{r, echo = FALSE}
+tterreno.eclust$size
+```
+
+
+
+```{r, echo = FALSE}
+fviz_silhouette(tterreno.eclust)
+```
+
+
+```{r, echo = FALSE}
+tterreno.eclust$cluster
+```
+
+
+```{r, echo = FALSE}
+tterreno_last <- data.frame(tterreno_wos, cluster = tterreno.eclust$cluster)
+tterreno_last
+```
+
+
+```{r, echo = FALSE}
+medidas_garajes <- tterreno_last %>%
+  group_by(cluster) %>%
+  summarize(mean_precio = round(mean(precio),1),
+            mean_cilindrada = round(mean(cilindrada),1),
+            mean_potencia = round(mean(potencia),1),
+            mean_revoluciones = round(mean(revoluciones),1),
+            mean_peso = round(mean(peso),1),
+            mean_plazas = round(mean(plazas),0),
+            mean_consumo120 = round(mean(consumo_120),1),
+            mean_consumourb = round(mean(consumo_urbano),1),
+            mean_vel_max = round(mean(velocidad_maxima),1))
+medidas_garajes
+```
+
+
+
+
+
