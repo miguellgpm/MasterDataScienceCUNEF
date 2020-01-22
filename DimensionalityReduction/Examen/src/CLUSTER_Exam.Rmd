@@ -1,0 +1,303 @@
+---
+title: "Examen Agrupación"
+author: "Miguel López Garralón"
+date: "15/1/2020"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = FALSE, echo = FALSE}
+library(haven)
+library(corrplot)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(skimr)
+library(readr)
+library(factoextra)
+library(FactoMineR)
+library(cluster) # clusters
+library(fpc)
+library(Rtsne) # t-SNE
+library(magrittr)
+library(ggrepel) # separar etiqutas
+library(dendextend) #
+```
+
+
+```{r, echo = FALSE, message = FALSE}
+setwd("C:/Users/migue/Desktop/CUNEF/Tecnicas de agrupacion y reduccion/Examen")
+```
+
+
+```{r, message = FALSE}
+bookings_CLU <- read_csv("../data/bookings_CLU.csv", col_types = cols(X1 = col_skip()))
+```
+
+```{r, message = FALSE}
+# para tener la misma base de datos pero sin escalar las variables
+
+bookings_CLU2 <- read_csv("../data/bookings_CLU.csv", col_types = cols(X1 = col_skip()))
+
+```
+
+
+```{r}
+View(bookings_CLU)
+```
+
+
+
+# Abstract
+
+Se ha realizado un modelo de clasificación a través de análisis cluster para poder diferenciar los perfiles de clientes que realizan reservas en un hotel. Este análisis se ha realizado mediante el método de Gower, tras lo cual se ha utilizado el método no jerárquico PAM. Para poder visualizar mejor los distintos grupos (clusters) se ha acudido al análisis de t-SNE. Tras todo este proceso los resultados obtenido no muestran una buena clasificación en 10 perfiles diferentes, que es el número de cluster óptimos que se debían realizar tras realizar diversas comprobaciones. Es por ello que se pretende seguir investigando en esta línea con la posibilidad de contar con equipos con mayor capacidad de cómputo y realizando un mejor filtrado de los casos, principalmente por los años más cercanos en el tiempo, debido a que los perfiles han podido cambiar con el paso de los años.
+
+# Objetivo
+
+El objetivo de la investigación es poder clasificar de la mejor manera posible a los clientes que realizan reservas hoteleras, con la principal intención de conocer qué perfil o perfiles de clientes son los más propensos a cancelar las reservas realizadas.
+
+# Variables seleccionadas para el modelo
+
+Debido a que la base de datos proviene de un dataset ya filtrado mediante el conocimiento de negocio y la bibliografía consultada (Antonio, Almeida, & Nunes, 2017), se muestran a continuación las variables tenidas en cuenta para elaborar el modelo de regresión logística: TotalNights, MomentWeek, TotalNumber, ClientsType, MarketSegment, ChangeRoom, ReservedRoomType, DepositType, CustomerType, ADR, Adults, LeadTime, DaysInWaitingList, TotalOfSpecialRequest, ArrivalDateMonth, ArrivalDateDayOfMonth, IsRepeatedGuest, BookingChanges y PreviousCancellations. 
+
+La variable IsCanceled, que determina si un cliente cancela o no la reserva, se utilizará para comprobar qué perfil o perfiles de clientes son los más propensos a cancelar las reservas, sin incluir por tanto dicha variable en el análisis Cluster.
+
+
+
+
+```{r}
+# paso a factor de las variables dicotómicas y categóricas
+
+bookings_CLU$ArrivalDateMonth <- as.factor(bookings_CLU$ArrivalDateMonth)
+bookings_CLU$MarketSegment <- as.factor(bookings_CLU$MarketSegment)
+bookings_CLU$CustomerType <- as.factor(bookings_CLU$CustomerType)
+bookings_CLU$MomentWeek <- as.factor(bookings_CLU$MomentWeek)
+bookings_CLU$IsRepeatedGuest <- as.factor(bookings_CLU$IsRepeatedGuest)
+bookings_CLU$DepositType <- as.factor(bookings_CLU$DepositType)
+bookings_CLU$ClientsType <- as.factor(bookings_CLU$ClientsType)
+bookings_CLU$ChangeRoom <- as.factor(bookings_CLU$ChangeRoom)
+bookings_CLU$IsCanceled <- as.factor(bookings_CLU$IsCanceled)
+```
+
+
+```{r}
+# paso a factor de las variables dicotómicas y categóricas de la copia de la base de datos
+
+bookings_CLU2$ArrivalDateMonth <- as.factor(bookings_CLU2$ArrivalDateMonth)
+bookings_CLU2$MarketSegment <- as.factor(bookings_CLU2$MarketSegment)
+bookings_CLU2$CustomerType <- as.factor(bookings_CLU2$CustomerType)
+bookings_CLU2$MomentWeek <- as.factor(bookings_CLU2$MomentWeek)
+bookings_CLU2$IsRepeatedGuest <- as.factor(bookings_CLU2$IsRepeatedGuest)
+bookings_CLU2$DepositType <- as.factor(bookings_CLU2$DepositType)
+bookings_CLU2$ClientsType <- as.factor(bookings_CLU2$ClientsType)
+bookings_CLU2$ChangeRoom <- as.factor(bookings_CLU2$ChangeRoom)
+bookings_CLU2$IsCanceled <- as.factor(bookings_CLU2$IsCanceled)
+```
+
+
+```{r}
+table(bookings_CLU$PreviousCancellations)
+```
+
+```{r}
+# división de la base de datos en numéricas y categóricas
+# escalado de las numéricas
+# unión de nuevo de ambos tipos de variables en un dataframe
+
+numericas <- scale(bookings_CLU[, !sapply(bookings_CLU, is.factor)])
+categoricas <- bookings_CLU[, sapply(bookings_CLU, is.factor)]
+bookings_CLU <- cbind(numericas, categoricas)
+```
+
+Análisis Cluster
+
+El análisis Cluster planteado se ha realizado mediante el método PAM (K-medoids), que es menos susceptible a los outliers, a su vez con el método de Gower (Andrienko, 2019), que genera una matriz de disimilaridades entre todos los registros por pares según los valores de sus variables. Se ha elegido este método ya que permite la inclusión de variables categóricas, algo que no es posible con otros métodos como el de distancias euclídeas. Se ha decidido aplicar este método ya que había un reducido número de variables numéricas, por lo que se perdía gran información sobre los clientes si se eliminaban las variables categóricas.
+
+Para poder realizar el análisis Cluster se ha realizado un proceso de estandarización de las variables numéricas, mientras las categóricas, ya fuesen dicotómicas o no, se han mantenido intactas.
+P
+ara saber el número óptimo de clusters que se deben seleccionar se han realizado los dendrogramas de diversos métodos (Ward, centroides y complete). En el que mejor se pueden apreciar las divisiones es con el de Ward, como se puede apreciar en el gráfico 1.
+
+
+```{r}
+set.seed(150120)
+# calculo de las distancias por medio del petodo Gower de la funcion daisy
+
+gower_dist <- daisy(bookings_CLU[-1], metric = "gower")
+```
+
+
+```{r}
+# resumen de la matriz de disimilaridades
+
+summary(gower_dist)
+```
+
+### comparación de los dendrogramas a partir de distintos métodos para establecer los centroides
+
+```{r}
+# método completo
+
+hc.complete <- hclust(gower_dist, method = "complete")
+plot(hc.complete, xlab = "observaciones",
+     main = "Método del encadenamiento completo")
+```
+
+```{r}
+# método del centroide
+
+hc.centroid <- hclust(gower_dist, method = "centroid")
+plot(hc.centroid, xlab = "observaciones",
+     main = "Método del centroide")
+```
+
+```{r}
+# método de Ward
+
+hc.ward <- hclust(gower_dist, method = "ward.D")
+plot(hc.ward, xlab = "observaciones",
+     main = "Método de Ward")
+```
+
+
+A continuación se representa el gráfico de la prueba del perfil, que aporta una información más sencilla y fácil de interpretar sobre el número de clusters óptimos que se deben realizar. Se debe señalar que debido a los altos recursos computacionales que requiere realizar el proceso para mostrar el número ótimo de cluster que deben seleccionarse se ha limitado la búsqueda hasta un máximo de 13 cluster.
+
+Como se puede ver en el Gráfico 2, el valor más alto de la prueba de perfil se encuentra en 10 cluster, por lo que ese será el número seleccionado de cluster para realizar la clasificación de los clientes.
+
+
+
+```{r}
+# obtenemos los valores de la prueba de perfil para cada número de clusters entre 2 y 13
+
+sil_width <- c(NA)
+
+for(i in 2:13){
+  pam_fit <- pam(gower_dist,
+                 diss = TRUE,
+                 k = i)
+  sil_width[i] <- pam_fit$silinfo$avg.width
+}
+```
+
+
+```{r}
+# gráficamos la prueba de perfil
+
+plot(1:13, sil_width,
+     xlab = "Number of clusters", xaxt='n',
+     ylab = "Silhouette Width")
+axis(1, at = seq(2, 13, by = 1), las = 2)
+lines(1:13, sil_width)
+```
+
+Tras obtener el número óptimo de cluster en los que debe dividirse a los distintos registros, se procede a hacer la división de los cluster por el método PAM, que es un método no jerárquico, el cual no se ve tan afectado por los outliers. Este método se realiza identificando los medioides que representan en mejor medida a los distintos grupos, en este caso 10, y se irán modificando dichos medioides en función de si era o no representative del grupo. Esto se realiza a través de la suma de las disimilaridades de la observación en relación a la representante de su cluster.
+
+
+```{r}
+# método PAM con 10 clusters
+
+pam_fit2 <- pam(gower_dist, diss = TRUE, k = 10)
+```
+
+
+```{r}
+# visualización de diferencias por cluster en las distintas variables
+
+pam_results2 <- bookings_CLU %>%
+  mutate(cluster = pam_fit2$clustering) %>%
+  group_by(cluster) %>%
+  do(the_summary = summary(.))
+pam_results2$the_summary
+```
+
+# t-SNE
+
+Para poder visualizar mejor los cluster obtenidos, se ha realizado un t-SNE, que es un método de reducción de la dimensión. Es un algoritmo de aprendizaje automático estocástico, que facilita la visualización de problemas multidimensionales a 2 o 3 dimensiones, preferentemente.
+
+Como se puede ver en el Gráfico 3 no se produce una división adecuada de los diferentes clusters, por lo que el modelo de clasificación planteado no produce el resultado deseado, ya que se entremezclan muchos de los casos aunque los clasifique en diferentes clusters.
+
+A pesar de ello, se muestran a continuación diferentes valores que se obtienen por cada cluster en relación a algunas variables, así como el porcentaje de registros de cada cluster que cancelan o no sus reservas en la Tabla 1.
+
+
+```{r}
+# realización del t-sne para visualizar los clusters
+
+tsne_obj2 <- Rtsne::Rtsne(gower_dist, is_distance = TRUE)
+
+tsne_data2 <- tsne_obj2$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit2$clustering))
+
+ggplot(aes(x = X, y = Y), data = tsne_data2) +
+  geom_point(aes(color = cluster))
+```
+
+
+
+```{r}
+# Para ver el número de personas que cancelan la reserva por cada cluster
+
+clusters.reservas <- data.frame(cluster = pam_fit2$clustering,
+                              cancela = bookings_CLU$IsCanceled)
+clusters.reservas$cluster <- as.factor(clusters.reservas$cluster)
+
+table(clusters.reservas$cluster, clusters.reservas$cancela,
+      dnn = c("Cluster", "Reserva Cancelada"))
+```
+
+
+
+```{r}
+# creación de una función para obtener la moda de una variables
+
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+```
+
+```{r}
+# creación de variables que indica cada cluster
+
+bookings_CLU2 <- bookings_CLU2 %>% mutate(cluster = pam_fit2$clustering)
+```
+
+
+```{r}
+# visualización de diferencias por cluster variables que se consideran relevantes
+
+medias_cancelaciones <- bookings_CLU2 %>%
+  group_by(cluster) %>%
+  summarize(mean_cancel = (round(mean(as.integer(IsCanceled)),2)) - 1,
+            mean_leadtime = round(mean(LeadTime),2),
+            mean_nights = round(mean(TotalNights),2),
+            mean_guests = round(mean(TotalNumber),2),
+            mean_ADR = round(mean(ADR),2),
+            mode_MarketSegment = Mode(MarketSegment),
+            mode_roomtype = Mode(ReservedRoomType))
+
+medias_cancelaciones
+```
+
+Se puede ver que los clientes que son clasificados en los cluster 5 y 10 cancelan siempre las reservas que realizan. Son dos de los grupos en los que más tiempo transcurre desde la reserva hasta la última actualización de la misma, sin embargo no hay ningún rasgo más de los reflejados en la tabla que parezca diferenciarse en exceso del resto de cluster, que no tienen porcentajes tan altos de cancelación de reservas.
+
+# Conclusiones
+
+La clasificación de los clientes en diversos grupos (cluster) creados a partir de una serie de variables no ha tenido la eficacia que se esperaba en un primer momento. Tras la visualización de dichos perfiles mediante un análisis de t-SNE se ha descubierto que la técnica de cluster para este problema no ha clasificado de forma adecuada a las personas que acuden al hotel, no existiendo grandes diferencias entre los distintos grupos en cuanto a sus características se refiere. Sí que se puede apreciar que hay 3 grupos que cancelan sus reservas por encima del resto de los grupos, pero como se acaba de argumentar, no hay grandes diferencias en sus características y las del resto de grupos. Es por ello que se pretende seguir investigando en esta línea, realizando una mejora en la selección de los casos y las variables, así como existe la posibilidad de abordar el problema mediante otras técnicas de clasificación.
+
+# Limitaciones de la investigación
+
+La principal limitación que se ha presentado a la hora de realizar la investigación ha sido la falta de capacidad de cómputo (Granville, 2017) para poder fijar el número óptimo de cluster y graficarlos mediante t-SNE, ya que seguramente aumentando el número de los mismos habría una mejor clasificación. Esto también conlleva problemas a la hora de pensar en el negocio, ya que establecer un número alto de perfiles de clientes (cluster) implica que es más difícil establecer una serie de políticas o actuaciones para por ejemplo ofrecer ventajas a los clientes que puedan cancelar su reserva y, de dicha forma, evitar que eso pase. Si se generan un número bajo de tipos de clientes se puede determiner con mayor certeza qué se debe hacer para solucionar los problemas relacionados con dichos clientes, pero con una alto número de perfiles distintos los problemas son demasiado amplios y, por tanto, es más difícil solucionar los casos tan particulares.
+
+
+
+
+
+

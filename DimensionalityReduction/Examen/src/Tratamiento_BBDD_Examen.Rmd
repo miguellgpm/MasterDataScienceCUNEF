@@ -1,0 +1,541 @@
+---
+title: "EDA Examen"
+author: "Miguel López Garralón"
+date: "12/1/2020"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, message = FALSE, warning = FALSE}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(skimr)
+library(ggplot2)
+library(pscl)
+library(caret)
+library(dummies) # crete dummies
+library(verification) # curva ROC
+library(xts)
+library(tseries)
+library(ggplot2)
+library(ggfortify) #Plot Monthplot
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+setwd("C:/Users/migue/Desktop/CUNEF/Tecnicas de agrupacion y reduccion/Examen")
+```
+
+
+```{r dataset, echo = FALSE, message = FALSE, warning = FALSE}
+bookings <- read_csv("../data/H1.csv")
+```
+
+# Resumen
+
+En este informe se muestra la selección, tratamiento y creación de las distintas variables de una base de datos de un hotel, en la cual aparecen reflejados diferentes datos sobre características de las reservas que se han realizado. En este informe no aparecen análisis de datos realizados, sino que es una primera aproximación para tener diversas bases de datos nuevas que provengan del tratamiento de la base de datos original para poder llevar a cabo diferentes análisis que serán citados más adelante.
+
+# Objetivo
+
+El objetivo de este informe es reflejar los cambios realizado en las distintas variables de la base de datos de cara a poder realizar diversos análisis que den respuesta a una serie de preguntas de interés sobre el negocio de las reservas hoteleras.
+
+# Observación de las variables, transformaciones y filtrado
+
+
+```{r, message = FALSE, warning = FALSE, results = 'hide'}
+skim(bookings)
+```
+
+No hay valores perdidos, al igual que tampoco existen valores nulos, sin embargo, sí que hay en algunas variables una categoría que toma el valor ‘NULL’ para indicar que no existe ese dato, pero el campo está relleno.
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+# Comprobamos que no hay valores nulos
+
+sapply(bookings, function(x) sum(is.null(x)))
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+# Vemos el numero de registros que tienen el valor 'NULL' en la variable
+# Company
+
+sum(bookings$Company == 'NULL')
+```
+
+
+## Eliminación de variables
+
+Lo primero de todo será indicar qué variables no se tendrán en cuenta para realizar los distintos análisis. La eliminación de ciertas variables viene marcada por el conocimiento del negocio y la bibliografía consultada, al igual que en el caso de las transformaciones.
+
+- Meal: No se considera que la reserva de más o menos comidas pueda influir en la cancelación de una reserva.
+
+-	Country: No se tendrá en cuenta la variable del país de origen ya que cuenta con un gran número de valores únicos, lo que introduciría una mayor complejidad a los análisis, principalmente a la interpretación. A esto hay que añadir que en un principio no se considera que el país de origen pueda ser una variable relevante a la hora de cancelar o no una reserva de hotel, ya que, de ser así, se podría estar aceptando unos prejuicios previos sobre diferencias entre nacionalidades.
+
+- DistributionChannel: Esta variable se elimina debido a que se ha decidio utilizar la variable MarketSegment, que aporta la misma información pero de forma más detallada.
+
+-	PreviousBookingNotCanceled: No se tendrá en cuenta ya que se utiliza la variable ‘PreviousCancellations’, que da la misma información pero de forma inversa.
+
+-	AssignedRoomType: Dicha variable se eliminará, pero previamente se calculará una nueva variable con el uso de ésta y la variable ‘AssignedRoomType’, donde se verá los registros que han sufrido un cambio en la habitación reservada y la asignada finalmente.
+
+-	Agent: En este caso ocurre lo mismo que con la variable ‘DistributionChannel’, ya que se considera que ‘MarketSegment’ aporta la misma información de forma más específica.
+
+-	Company: Se elimina por la misma razón que ‘Agent’ y ‘DistributionChannel’, además, casi la totalidad de los registros no tienen un valor asignado para este campo.
+
+-	RequiredCarParkingSpace: No se considera que esta variable influya en la cancelación o no de una reserva.
+
+-	ReservationStatus: No se tendrá en cuenta ya que es prácticamente igual que la variable ‘IsCanceled’, que será la variable objetivo para ciertos análisis que se realizarán.
+
+-	Babies: La variable ‘Babies’ se eliminará debido a que hay muy pocos registros en los que la reserva incluya a bebés. Sin embargo, sí que se utilizará esta variable para calcular dos nuevas. Una de ellas será la suma de todas las personas para las cuales se hace la reserva y, la segunda, que será una variable dicotómica en la cual un valor implicará que la reserva es sólo para personas adultas y el otro valor que es una reserva para adultos y menores.
+
+-	Children: Se realizará la misma operación que con la variable ‘Babies’.
+
+
+## Variables seleccionadas
+
+A continuación se explica el motivo de la selección de las distintas variables, así como las distintas transformaciones que se han realizado sobre algunas de ellas, las cuales se ha considerado que pueden ser importantes para los distintos análisis que se pretenden realizar.
+
+
+- TotalNights
+
+Esta variable refleja las noches totales que se han reservado, se calcula a través de la suma de las variables ‘StaysInWeekendNights’ y ‘StaysInWeekNights’.
+
+```{r totalnights, warning = FALSE, message = FALSE}
+bookings$TotalNights <- bookings$StaysInWeekendNights +
+  bookings$StaysInWeekNights
+```
+
+- MomentWeek
+
+En este caso lo que se tiene en cuenta es si la reserva se ha hecho sólo para el fin de semana (‘OnlyWeekend’), sólo para días que no son fin de semana (‘OnlyWeek’), si se ha hecho para ambos casos (‘WeekendAndWeek’) o si no se reserva ninguna noche (‘NoNights’), teniendo en cuenta los valores de las variables ‘StaysInWeekendNights’ y ‘StaysInWeekNights’. Esta variable se convertirá a variables dummies mediante One Hot Encoding (Brownlee, 2017) más adelante para usarla en ciertos análisis de dicha forma.
+
+```{r, message = FALSE, warning = FALSE, results = 'hide'}
+# Se crea la variable teniendo en cuenta lo siguiente:
+
+# Si no se queda ninguna noche en fin de semana ni entre semana se crea el valor
+# 'NoNights'
+bookings$MomentWeek <- ifelse((bookings$StaysInWeekendNights == 0 &
+                                 bookings$StaysInWeekNights == 0),
+                              'NoNights', 99)
+
+# Si se queda alguna noche en fin de semana pero ninguna entre semana se crea el # valor 'OnlyWeekend'
+bookings$MomentWeek <- ifelse((bookings$StaysInWeekendNights != 0 &
+                                 bookings$StaysInWeekNights == 0),
+                              'OnlyWeekend', bookings$MomentWeek)
+
+# Si se queda alguna noche entre semana pero ninguna en fin de semana se crea el # valor 'OnlyWeek'
+bookings$MomentWeek <- ifelse((bookings$StaysInWeekendNights == 0 &
+                                 bookings$StaysInWeekNights != 0),
+                              'OnlyWeek', bookings$MomentWeek)
+
+# Si se queda alguna noche en fin de semana y entre semana se crea el valor
+# 'WeekendAndWeek'
+bookings$MomentWeek <- ifelse((bookings$StaysInWeekendNights != 0 &
+                                 bookings$StaysInWeekNights != 0),
+                              'WeekendAndWeek', bookings$MomentWeek)
+```
+
+```{r, message = FALSE, warning = FALSE}
+table(bookings$MomentWeek)
+```
+
+
+- TotalNumber
+
+La suma de todas las personas para las que se hace la reserve (Adults, Children y Babies)
+
+```{r, message = FALSE, warning = FALSE}
+# se suman las 3 variables originales
+
+bookings$TotalNumber <- bookings$Adults + bookings$Children + bookings$Babies
+```
+
+- ClientsType
+
+Aquí se recoge si las personas para las que está hecha la reserva son únicamente adultos (1) o adultos y menores de edad (0).
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+# si el valor adultos es distintos de 0 y las variables children y babies es igual a 0 se crea un 1, sino se crea un 0
+
+bookings$ClientsType <- ifelse((bookings$Adults != 0 &
+                                  (bookings$Children == 0 &
+                                     bookings$Babies == 0)), 1, 0)
+```
+
+- MarketSegment
+
+Esta variable será tratada como variables dummies independientes para cada categoría para ciertos análisis (como pueda ser una regresión logística), pero para otros casos (análisis clúster con método de Gower) será tratada como está, es decir como una única variable categórica con diferentes valores.
+
+Los valores que puede adopter son: 
+
+-	Direct – reservas hechas directamente por los clientes
+
+-	Corporate – reservas por empresas
+
+-	Complementary – 
+
+-	Groups – realizadas por grupos
+
+-	Offline TA/TO – realizadas vía presencial por operadores turísticos o agencias de viajes
+
+-	Online TA – reservas vía online por agencias de viaje
+
+
+```{r, message = FALSE, warning = FALSE}
+table(bookings$MarketSegment)
+```
+
+- ChangeRoom
+
+Es una nueva variable dicotómica que refleja si ha habido un cambio entre la habitación reservada por los clientes y la habitación asignada. Si se ha mantenido la misma habitación la variable toma el valor 0, sino, toma el valor 1.
+
+
+```{r, message = FALSE, warning = FALSE}
+# si la habitación reservada y la asignada son la misma se pone un 0, sino se pone un 1
+
+bookings$ChangeRoom <- ifelse(bookings$ReservedRoomType == bookings$AssignedRoomType, 0, 1)
+```
+
+```{r, message = FALSE, warning = FALSE}
+table(bookings$ChangeRoom, bookings$IsCanceled)
+```
+
+- ReservedRoomType
+
+Dicha variable será transformada a una variable de tipo ordinal, donde el valor más alto corresponderá al tipo de habitación que tenga un precio medio más alto y, el valor más bajo al contrario. Además, se ha decidio eliminar los registros que tienen asignado el valor de habitación ‘P’, ya que sólo hay dos casos y tienen un valor medio de 0 euros.
+
+Esta transformación se realiza de dicha manera de acuerdo a Integer Encoding (Brownlee, 2017).
+
+El orden de más cara a más barata es el siguiente:
+
+-	H -> 9
+-	G -> 8
+-	C -> 7
+-	F -> 6
+-	L -> 5
+-	E -> 4
+-	B -> 3
+-	D -> 2
+-	A -> 1
+
+
+
+```{r, message = FALSE, warning = FALSE}
+# agrupar por habitación reservada y sacar la media del precio por cada una
+
+precio_habitacion <- bookings %>%
+  group_by(ReservedRoomType) %>%
+  summarize(media = mean(ADR))
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+precio_habitacion[order(-precio_habitacion$media),]
+```
+
+```{r, message = FALSE, warning = FALSE}
+# ver cuantos casos hay con habitación reservada de tipo P
+
+sum(bookings$ReservedRoomType == 'P')
+```
+
+```{r, message = FALSE, warning = FALSE}
+# eliminación de dichos casos
+
+bookings <- filter(bookings, ReservedRoomType != 'P')
+```
+
+
+```{r message = FALSE, warning = FALSE}
+# Agrupamos por tipo de habitacion y se pide la media del ADR para cada tipo
+
+precio_habitacion <- bookings %>%
+  group_by(ReservedRoomType) %>%
+  summarize(media = mean(ADR))
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+precio_habitacion[order(-precio_habitacion$media),]
+```
+
+```{r, message = FALSE, warning = FALSE}
+# Recodificacion de la variable a tipo ordinal
+
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'H'] <- 9
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'G'] <- 8
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'C'] <- 7
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'F'] <- 6
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'L'] <- 5
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'E'] <- 4
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'B'] <- 3
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'D'] <- 2
+bookings$ReservedRoomType[bookings$ReservedRoomType == 'A'] <- 1
+```
+
+```{r, message = FALSE, warning = FALSE}
+str(bookings$ReservedRoomType)
+```
+
+```{r, message = FALSE, warning = FALSE}
+# se cambia el tipo de la variable a numérica
+
+bookings$ReservedRoomType <- as.numeric(bookings$ReservedRoomType)
+```
+
+
+- DepositType
+
+Esta variable se transformará, pasando de 3 valores a 2, de forma que será otra variable dicotómica. Los valores ‘Non Refund’ y ‘Refundable’ pasarán a tener el valor 0, que implica que se ha hecho un depósito previo para reservar la habitación, y el valor ‘No Deposit’ tendrá asociado un 1, que implica que no ha habido un depósito previo para reservar la habitación.
+
+```{r, message = FALSE, warning = FALSE}
+# conversión a dicotómica
+
+bookings$DepositType <- ifelse(bookings$DepositType == 'No Deposit', 1, 0)
+```
+
+- CustomerType
+
+Esta variable se transformará a dummies de la misma forma que la variable ‘MarketSegment’. Los valores que asume son los siguientes:
+
+-	Contract – reservas realizadas por contrato individual con una persona
+-	Group – reservas realizadas para grupos
+-	Transient – cliente de paso
+-	Transient-Party – realizadas para personas que acuden a un evento
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+table(bookings$CustomerType)
+```
+
+- Adults
+
+Número de adultos para los que se realiza la reserva.
+
+- ADR
+
+En el caso de esta variable, que indica el precio medio pagado por noche por cada reserva, se ha podido observar que hay un valor negativo y 749 casos que tienen el valor 0. Se procederá a eliminar el registro que tiene un valor negativo, ya que no tiene sentido que se pague a uno o varios clientes por hospedarse en un hotel. Sin embargo, se mantendrán los valores iguales a 0, ya que puede deberse a ofertas que se realizan para grupos grandes, empresas o casos similares, en los cuales se puede llegar a ofertar ciertas habitaciones de forma gratuita por ser un gran número o por clientes habituales.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+sum(bookings$ADR == 0)
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+sum(bookings$ADR < 0)
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+bookings <- filter(bookings, bookings$ADR >= 0)
+```
+
+- LeadTime
+
+El tiempo en días que ha pasado desde que se realizó la reserva hasta la última actualización de la reserva, ya sea cancelación o llegada al hotel.
+
+- IsRepeatedGuest
+
+Si es un cliente que ya ha acudido con anterioridad al hotel tiene asignado el valor 1, y el valor 0 si es la primera vez que acude, se trata de una variable dicotómica.
+
+- PreviousCancellations
+
+Si el cliente ya ha realizado una cancelación de reserve con anterioridad, es una variable dicotómica que tiene el valor 0 si no ha cancelado previamente la reserve y un1 si lo ha hecho con anterioridad.
+
+- BookingChanges
+
+Refleja el número de cambios que ha habido sobre la reserve fijada.
+
+- DaysInWaitingList
+
+Los días que ha estado esperando el cliente para que se le pudiese conceder una reserve de habitación.
+
+- TotalOfSpecialRequest
+
+Número de peticiones especiales para la reserva realizada.
+
+
+```{r new dataset, message = FALSE, warning = FALSE}
+# Seleccion final de las variables que se utilizarán
+
+bookings_final <- dplyr::select(bookings, -c(Country, ReservationStatus,
+                                 AssignedRoomType, Company,
+                                 RequiredCarParkingSpaces, Agent, Meal,
+                                 DistributionChannel, Babies, Children,
+                                 PreviousBookingsNotCanceled,
+                                 StaysInWeekendNights, StaysInWeekNights))
+```
+
+```{r, message = FALSE, warning = FALSE, results = 'hide'}
+str(bookings_final)
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+# se guarda la base de datos
+
+write.csv(bookings_final, file = "../data/bookings_final.csv")
+```
+
+
+## Selección y transformación de variables para Agrupación y Reducción de la dimensión
+
+
+Para la realización de una técnica de clasificación mediante cluster se eliminarán todas las variables que representen fechas, a excepción del mes en el que se materializa la reserva, es decir, el mes de llegada al hotel, y el día en el que se materializa la reserva.
+Estas variables se incluyen ya que, por ejemplo, para el caso del mes, debido a la estacionalidad en los periodos vacacionales se asume que se darán diferentes perfiles de clientes. Y, en cuanto a los días del mes, se tendrá en cuenta ya que según avanza el mes las personas suelen disponer de menos dinero, por lo que puede variar el perfil de los clientes teniendo en cuenta los días en los que se acude a un hotel.
+
+
+```{r, message = FALSE, warning = FALSE}
+bookings_CLU <- dplyr::select(bookings_final, -c(ArrivalDateYear,
+                                          ArrivalDateWeekNumber,
+                                          ReservationStatusDate))
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+write.csv(bookings_CLU, file = "../data/bookings_CLU.csv")
+```
+
+
+
+## Selección y transformación de variables para Predicción
+
+### Primer artículo
+
+Clasificación binaria
+Para este artículo se tendrán en cuenta las mismas variables que en el caso del artículo para agrupación. Se eliminarán todas las variables que representen fechas, a excepción del mes en el que se materializa la reserva, es decir, el mes de llegada al hotel, y el día en el que se materializa la reserve por los mismos motivos que en el caso del análisis cluster ya comentado previamente.
+Además, las variables categóricas serán transformadas a dummies para introducirlas de dicha forma en un análisis de regresión logística. Dichas variables son las siguientes (sin tener en cuenta las que ya son dicotómicas con valores 0 y 1):
+
+-	MomentWeek
+
+-	MarketSegment
+
+-	CustomerType
+
+
+```{r, message = FALSE, warning = FALSE}
+bookings_glm <- dplyr::select(bookings_final, -c(ArrivalDateYear,
+                                          ArrivalDateWeekNumber,
+                                          ReservationStatusDate))
+```
+
+
+```{r, message = FALSE, warning = FALSE, results = 'hide'}
+str(bookings_glm)
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+write.csv(bookings_glm,
+          file = "C:/Users/migue/Desktop/CUNEF/Prediccion/Examen/data/bookings_glm.csv")
+```
+
+
+### Segundo artículo
+
+Para este caso, debido a que se trabajará con series temporales se debe crear una variable que es la fecha esperada de llegada (ExpectedDate). Esto se realiza fusionando tres variables diferentes, que son:
+
+-	Año (ArrivalDateYear)
+
+-	Número del mes (ArrivalDateMonth)
+
+-	Día del mes (ArrivalDateDayOfMonth)
+
+Tras esto, para poder predecir el número de reservas que se harán cada día se tiene que restar la variable LeadTime a la anteriormente creada, ExpectedDate.
+
+Tras realizar este último paso, se crea una última variable que hará la función de contador, y que únicamente tendrá un 1 por cada registro. De esta forma se agruparán las fechas por semanas y se sumarán el número de reservas que se han realizado por cada día. Tras llevar a cabo esta operación, se elimina la variable que ha ejercido la función de contador.
+
+Además, se eliminará la última semana de la serie temporal, ya que sólo está compuesta por 3 días, por lo que hay un menor número de observaciones y de incluirse se estaría estableciendo un sesgo. A esto hay que elimiar también las 51 primeras filas (previas a 2015), ya que no tienen casi reservas realizadas, su número es casi 0 por cada registro, lo que provoca que la predicción no se haga de una forma adecuada.
+
+
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+bookings_TS <- bookings_final
+```
+
+```{r}
+str(bookings_TS$ArrivalDateYear)
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+# Se establece una nueva variable que señala la fecha de reserva con el año, 
+# mes y dia
+
+bookings_TS$ExpectedDate <- paste(bookings_TS$ArrivalDateYear, bookings_TS$ArrivalDateMonth, bookings_TS$ArrivalDateDayOfMonth, sep = "-")
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+write.csv(bookings_TS,
+          file = "C:/Users/migue/Desktop/CUNEF/Prediccion/Examen/data/bookings_TS.csv")
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+bookings_TS <- read_csv("C:/Users/migue/Desktop/CUNEF/Prediccion/Examen/data/bookings_TS.csv", col_types = cols(ExpectedDate = col_date(format = "%Y-%B-%d"), X1 = col_skip()))
+```
+
+
+```{r}
+bookings_TS$ExpectedDate <- bookings_TS$ExpectedDate - bookings_TS$LeadTime
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+bookings_TS$reservas <- 1
+```
+
+```{r, message = FALSE, warning = FALSE}
+temp_serie <- bookings_TS %>%
+  group_by(ExpectedDate) %>%
+  summarise(reservas = sum(reservas))  
+```
+
+```{r}
+temp_serie
+```
+
+```{r}
+temp_serie <- temp_serie[52:967,]
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+temp_serie <- xts(temp_serie$reservas,
+                  order.by = temp_serie$ExpectedDate, frequency = 365.25)
+```
+
+```{r, message = FALSE, warning = FALSE}
+weekly <- apply.weekly(temp_serie, sum)
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly <- weekly[1:137,]
+
+#Data Size
+nObs <- length(weekly)
+
+
+oweekly0 <- window(weekly, start = index(weekly[1]),
+                  end = index(weekly[nObs]))
+```
+
+La serie temporal se puede observar en el siguiente gráfico:
+
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+autoplot(oweekly0)
+```
+
+
+
+
+
+
+
