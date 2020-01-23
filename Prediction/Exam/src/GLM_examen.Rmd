@@ -1,0 +1,422 @@
+---
+title: "LogisticRegression"
+author: "Miguel López Garralón"
+date: "16/1/2020"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, echo = FALSE, message = FALSE, warning = FALSE}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(skimr)
+library(dummies)
+library(pscl)
+library(dummies) # crete dummies
+library(verification) # curva ROC
+library(boot)
+library(glmnet)
+library(caret)
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+setwd("C:/Users/migue/Desktop/CUNEF/Prediccion/Examen")
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+semilla <- 170120 # se fija una semilla y se guarda en un objeto
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+bookings_glm <- read_csv("../data/bookings_glm.csv", col_types = cols(X1 = col_skip()))
+```
+
+
+
+# Abstract
+
+Se ha establecido un modelo de regresión logística para poder predecir las reservas de un hotel que serán canceladas. Se han introducido en el modelo una serie de variables tratadas y filtradas de una base de datos, dicha selección y transformación viene explicada en los anexos, tras lo cual se ha realizado un modelo elastic net para seleccionar de manera más precisa las variables relevantes. El modelo de predicción obtenido tiene un accuracy de 0.795, con un área bajo la curva ROC de 0.82. Estas medidas implican que se ha obtenido un buen modelo de predicción, al que se le han asignado unos pesos determinados para los fallos a la hora de predecir por parte del modelo, los cuales vienen explicados más adelante en el propio informe.
+
+# Objetivo
+
+El objetivo de este informe es mostrar un modelo de predicción a través de una regresión logística que minimice las posibles pérdidas de un hotel a consecuencia de las reservas canceladas por parte de los clientes.
+
+
+# Variables seleccionadas para el modelo
+
+Debido a que la base de datos proviene de un dataset ya filtrado, se muestran a continuación las variables tenidas en cuenta para elaborar el modelo de regresión logística: TotalNights, MomentWeek, TotalNumber, ClientsType, MarketSegment, ChangeRoom, ReservedRoomType, DepositType, CustomerType, ADR, Adults, LeadTime, DaysInWaitingList, TotalOfSpecialRequest, ArrivalDateMonth, ArrivalDateDayOfMonth, IsRepeatedGuest, BookingChanges y PreviousCancellations.Estas variables fueron incluidas en un modelo elastic net, realizado con Cross-Validation, para ver los coeficientes más relevantes (superiores a 0.1) y que serán incluidas en el modelo de regresión logística.
+
+Dichas variables finales son las siguientes: 
+
+LeadTime, PreviousCancelations, ReservedRoomType, BookingChanges, DaysInWaitingList, ADR, TotalOfSpecialRequest, TotalNumber, ArrivalDateMonth (April, August, December, February, July, September), MarketSegmentComplementary, MarketSegmentDirect, MarketSegmentOffline TA/TO, MarketSegmentOnline TA, IsRepeatedGuest, DepositType, CustomerTypeContract, CustomerTypeGroup, CustomerTypeTransient, MomentWeekNoNights.
+
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+# paso a factor de las variables dicotómicas y categóricas
+
+bookings_glm$ArrivalDateMonth <- as.factor(bookings_glm$ArrivalDateMonth)
+bookings_glm$MarketSegment <- as.factor(bookings_glm$MarketSegment)
+bookings_glm$CustomerType <- as.factor(bookings_glm$CustomerType)
+bookings_glm$MomentWeek <- as.factor(bookings_glm$MomentWeek)
+bookings_glm$IsRepeatedGuest <- as.factor(bookings_glm$IsRepeatedGuest)
+bookings_glm$DepositType <- as.factor(bookings_glm$DepositType)
+bookings_glm$ClientsType <- as.factor(bookings_glm$ClientsType)
+bookings_glm$ChangeRoom <- as.factor(bookings_glm$ChangeRoom)
+bookings_glm$IsCanceled <- as.factor(bookings_glm$IsCanceled)
+```
+
+
+```{r, echo = FALSE}
+# separación de las variables en numéricas y categóricas
+# escalado de las numéricas
+
+numericas <- scale(bookings_glm[, !sapply(bookings_glm, is.factor)])
+categoricas <- bookings_glm[, sapply(bookings_glm, is.factor)]
+bookings_glm <- cbind(numericas, categoricas) # se vuelven a juntar todas las variables
+```
+
+
+```{r dummies, echo = FALSE, message = FALSE, warning = FALSE}
+# creación de variables dummies
+
+bookings_glm <- dummy.data.frame(bookings_glm)
+bookings_glm <- dummy.data.frame(bookings_glm,
+                                  names = "ArrivalDateMonth")
+bookings_glm <- dummy.data.frame(bookings_glm,
+                                  names = "MarketSegment")
+bookings_glm <- dummy.data.frame(bookings_glm,
+                                  names = "CustomerType")
+bookings_glm <- dummy.data.frame(bookings_glm,
+                                  names = "MomentWeek")
+```
+
+```{r, echo = FALSE, results = 'hide'}
+str(bookings_glm)
+```
+
+
+```{r, echo = FALSE}
+# eliminación de variables dummies duplicadas
+
+bookings_glm <- dplyr::select(bookings_glm, -c(ClientsType0, ChangeRoom0,
+                                               IsCanceled0, IsRepeatedGuest0,
+                                               DepositType0))
+```
+
+
+```{r, echo = FALSE}
+# renombrar las dummies con las que finalmente nos quedamos
+
+bookings_glm <- dplyr::rename(bookings_glm,
+                              ClientsType = ClientsType1,
+                              ChangeRoom = ChangeRoom1,
+                              IsCanceled = IsCanceled1,
+                              IsRepeatedGuest = IsRepeatedGuest1,
+                              DepositType = DepositType1)
+```
+
+```{r, echo = FALSE, results = 'hide'}
+str(bookings_glm)
+```
+
+```{r, echo = FALSE}
+bookings_glm$IsCanceled <- as.factor(bookings_glm$IsCanceled)
+```
+
+
+# Elastic Net
+
+Para seleccionar las variables no hacemos división en train y test.
+
+Cross-Validation para obtener alpha y lambda
+
+
+```{r, echo = FALSE}
+# separamos en exógenas y endógena
+
+bookings_x <- model.matrix(IsCanceled ~., data = bookings_glm)[, -1]
+bookings_y <- bookings_glm$IsCanceled
+```
+
+
+```{r, echo = FALSE}
+set.seed(semilla)
+
+# CV para obtener el mejor alpha para elastic net
+
+train_control <- trainControl(method = "cv", number = 5)
+
+caret_mod <- train(
+  x = bookings_x,
+  y = bookings_y,
+  method = "glmnet",
+  preProc = c("center", "scale", "zv", "nzv"),
+  trControl = train_control,
+  tuneLength = 10
+)
+
+caret_mod
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+set.seed(semilla)
+
+# modelo elastic net
+
+cv_net <- cv.glmnet(bookings_x, bookings_y, family = "binomial", alpha = 0.4)
+min(cv_net$cvm)
+```
+
+
+```{r, echo = FALSE}
+# visualización de los coeficientes tras elastic net
+
+coefs <- predict(cv_net, type = "coefficients", s = cv_net$lambda.min)
+coefs
+```
+
+```{r, echo = FALSE, results = 'hide'}
+# creación de un dataframe en el que aparezcan los coeficientes y los nombres de las variables para poder filtrar las mismas
+
+coefs <- as.matrix(coefs)
+coefs <- as.data.frame(coefs)
+names(coefs) = c('coeficientes')
+coefs <- mutate(coefs, variables = rownames(coefs))
+```
+
+
+
+```{r, echo = FALSE}
+# filtrado por las variables que tengan un coeficiente superior a 0.1 en valor absoluto
+
+final_variables <- dplyr::filter(coefs, abs(coeficientes) >= 0.1)
+```
+
+```{r, echo = FALSE}
+# lista final de las variables que se incluirán en el modelo glm, salvo la constante (Intercept)
+
+list(final_variables$variables)
+```
+
+```{r, echo = FALSE}
+# creación de un nuevo dataframe con las variables seleccionadas previamente
+
+bookings_glm_final <- dplyr::select(bookings_glm, c(LeadTime, PreviousCancellations,
+                                             ReservedRoomType, BookingChanges,
+                                             DaysInWaitingList, ADR,
+                                             TotalOfSpecialRequests,
+                                             TotalNumber, ArrivalDateMonthApril,
+                                             ArrivalDateMonthAugust,
+                                             ArrivalDateMonthDecember,
+                                             ArrivalDateMonthFebruary,
+                                             ArrivalDateMonthJuly,
+                                             ArrivalDateMonthSeptember,
+                                             MarketSegmentComplementary,
+                                             MarketSegmentDirect,
+                                             `MarketSegmentOffline TA/TO`,
+                                             `MarketSegmentOnline TA`,
+                                             IsRepeatedGuest,            
+                                             DepositType,
+                                             CustomerTypeContract,        
+                                             CustomerTypeGroup,
+                                             CustomerTypeTransient,       
+                                             MomentWeekNoNights,
+                                             ChangeRoom,
+                                             IsCanceled))
+```
+
+
+
+# Modelo de regresión logística
+
+
+```{r train y test, echo = FALSE, message = FALSE, warning = FALSE}
+set.seed(semilla)
+
+# división en train y test
+
+train <- sample(nrow(bookings_glm_final), 0.8 * nrow(bookings_glm_final))
+
+bookings_glm.train <- bookings_glm_final[train,]
+
+bookings_glm.test <- bookings_glm_final[-train,]
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+# modelo glm para la parte de train
+
+modelo1 <- glm(IsCanceled ~.,
+               family = binomial(link= 'logit'),
+               data = bookings_glm.train)
+summary(modelo1)
+```
+
+Tras realizar el modelo de regresión logística, se puede apreciar que todas las variables son significativas excepto tres:
+
+-	ArrivalDateMonthAugust: Clientes que acuden en agosto
+
+-	CustomerTypeContract: Son reservas realizadas por contrato por personas individuales
+
+-	CustomerTypeGroup: Reservas realizadas por grupos
+
+Por su parte, mostramos a continuación los ODDS Ratio más reseñables obtenidos. Primero se debe señalar que si el valor de los ODDs Ratio es superior a 1, hay mayor probabilidad de que dicho cliente cancele la reserva a la probabilidad de que la mantenga. Por el contrario, si el valor es inferior a 1 ocurre a la inversa.
+
+El ODD Ratio más alto de todos es el de la variable PreviousCancellations, que tiene un valor de 42.15. Esto implica que la probabilidad de que un cliente que ya ha cancelado una reserva previamente cancele la actual es muy superior a la probabilidad de que no la cancele.
+Otro caso reseñable es el de algunas variables dummies provenientes de la variable original MarketSegment, que refleja cómo se ha realizado la reserva. La categoría de referencia para estas dummies es la suma de las las categorías MarketSegmentDirect y MarketSegmentCorporate, es decir, las realizadas de forma individual y por una compañía, por lo que los valores de los ODDs ratio del resto hacen referencia a la mayor o menor probabilidad de cancelar la reserva en comparación con este tipo de clientes. El valor más alto de los ODDs ratio de estas variables que encontramos es el de MarketSegmentComplementary, que es de 2.07, lo que implica que los clientes que han realizado su reserva de esta forma tienen una mayor probabilidad de cancelar la reserva que las personas que lo han hecho por ellas mismas o por una compañía. También podemos encontrar valores inferiores a 1, como es el caso de MarketSegmentOffline TA/TO, con un valor de 0.32. Esta categoría hace referencia a las personas que han hecho la reserva con una agencia de viajes o un operador turístico de forma presencial, no vía online. Este tipo de clientes tiene una menor probabilidad de cancelar la reserva que las personas que la han realizado por ellas mismas o por una compañía.
+
+Para finalizar con los ODDs ratio, se debe señalar que la variable que menor valor alcanza es la de si se había realizado algún tipo de depósito a la hora de hacer la reserve (DepositType). Las personas que no han realizado un depósito a la hora de reservar la habitación frente a la que sí habían realizado un depósito alcanzan un valor en el ODDs Ratio de 0.13. Esto implica que las personas que pagan un depósito tienen una menor probabilidad de cancelar la reserva que las que no lo pagan. Esto parece algo evidente, ya que al no realizarse un desembolso económico como depósito no se perderá nada si se cancela finalmente la reserva.
+
+
+
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+exp(coef(modelo1))
+```
+
+
+```{r anova, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+anova(modelo1, test = "Chisq")
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+format(pR2(modelo1), scientific = F)
+```
+
+La R cuadrado de Nagelkerke es utilizada para saber la bonanza del modelo, cuanto más cercano es el valor a 1, mejor será el modelo. En este caso, nos encontramos con un valor de 0.396.
+
+# Cut-off óptimo
+
+Para seleccionar el punto de corte en el cual se establece que un cliente va a cancelar una reserva se realiza una búsqueda Grid para encontrar dicho punto de corte óptimo. Además, dicho corte será seleccionado teniendo en cuenta unos costes para los casos en los que el modelo no clasifica de forma adecuada a los cliente en las predicciones, es decir, los casos que son falsos positivos y falsos negativos en la matriz de confusión.
+
+Los falsos positivos serán clientes que el modelo detecta que van a cancelar la reserva, pero que realmente no cancela. A estos casos les aplicaremos un coste de 8, que será el doble que el de los falsos negativos. Esto se debe a que consideramos que si el modelo clasifica mal a estos clientes conllevará mayor pérdida para el hotel, debido a que se denegará una reserva a una persona que no iba a cancelar, por lo que se tendrá una pérdida económica por no alojar a dicho cliente y además existirá una alta probabilidad de obtener mala prensa. Por otro lado, los falsos negativos son clientes que se predice que no van a cancelar pero que realmente sí que lo hacen. Se penalizará la clasificación de estos casos con un coste de 4. Se da por hecho que esto perjudica menos al hotel debido a que si una persona cancela se podrá ocupar dicha habitación con nuevos clientes, aunque sea a un menor precio. Además, no se obtiene mala prensa denegando la reserva a posibles clientes.
+
+
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+set.seed(semilla)
+# search grid desde 0.01 a 1 con saltos de 0.01
+searchgrid = seq(0.01, 1, 0.01)
+# el resultado es una matriz de 100x2 en la que la primera columna se muestra
+# el cutt-off y en la segunda el coste
+result = cbind(searchgrid, NA)
+# En la funcion de coste r y pi son vectores, r significa que es verdadero  
+# (TRUE) y pi es la probabilidad predicha
+cost1 <- function(r, pi){
+  weight1 = 4 # peso 1, que se multiplicara por los falsos positivos
+  weight0 = 8 # peso 2, que se multiplicara por los falsos negativos
+  c1 = (r==1)&(pi<pcut) # verdadero si es 1 pero predice 0
+  c0 = (r==0)&(pi>pcut) # verdadero si es 0 pero predice 1
+  return(mean(weight1*c1+weight0*c0))
+}
+reservas.glm1 <- glm(IsCanceled ~.,
+               family = binomial(link = 'logit'),
+               data = bookings_glm.train); 
+prob <- predict(reservas.glm1, type = "response")
+for (i in 1:length(searchgrid))
+{
+  # asigna el cut-off a la primera columna
+  pcut <- result[i, 1]
+  # asigna el coste a la segunda columna
+  result[i, 2] <- cost1(bookings_glm.train$IsCanceled, prob)
+}
+plot(result, ylab="Cost in Training Set")
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+# cut_off óptimo
+
+result[which.min(result[,2]),]
+```
+
+Tras el search grid se establece que el cut-off se fijará en 0.57, lo que implica que los registros que tengan una probabilidad superior a 0.57 de cancelar la reserva serán considerados como 1, es decir, como que cancelarán la reserva, siendo a la inversa en los casos iguales o inferiores a 0.57.
+
+```{r, echo = FALSE}
+prob.modelo1.insample <- predict(modelo1, type = "response")
+predicted.modelo1.insample <- prob.modelo1.insample > 0.57
+predicted.modelo1.insample <- as.numeric(predicted.modelo1.insample)
+```
+
+
+# Confussion Matrix dentro de la muestra
+
+```{r, echo = FALSE}
+# matriz de confusión de la parte de train para entrenar el modelo
+
+confusionMatrix(data = as.factor(predicted.modelo1.insample),
+                reference = as.factor(bookings_glm.train$IsCanceled),
+                dnn = c("Predicted", "Real cases"))
+```
+
+
+```{r, echo = FALSE}
+fitted.results <- predict(modelo1,
+                          newdata = subset(bookings_glm.test,
+                                         select = -IsCanceled),
+                          type = 'response')
+fitted.results <- ifelse(fitted.results > 0.57, 1, 0)
+```
+
+
+
+```{r, echo = FALSE, results = 'hide'}
+prob.modelo1.outsample <- predict(modelo1,
+                                   bookings_glm.test, type = "response")
+predicted.modelo1.outsample <-  prob.modelo1.outsample > 0.57
+predicted.modelo1.outsample <- as.numeric(predicted.modelo1.outsample)
+```
+
+
+# Confussion Matrix de la parte de test
+
+
+```{r, echo = FALSE}
+# matriz de confusión de la parte de test para ver la predicción
+
+confusionMatrix(data = as.factor(predicted.modelo1.outsample),
+                reference = as.factor(bookings_glm.test$IsCanceled),
+                dnn = c("Predicted", "Real cases"))
+```
+
+La matriz de confusión para la parte de test (compuesta por un 20 % de los registros, seleccionados de forma aleatoria) muestra un accuracy muy similar al de la parte de training (0.795 y 0.806 respectivamente), por lo que no hay overfitting en el modelo. Con estas métricas se ve que el modelo acierta en un 97 % los casos de reservas que se llegan a formalizar. Por otro lado, sólo detecta un 37 % de los casos en los que se va a producir una cancelación de reserva. Sí que se debe señalar que este modelo de regresión logística clasifica de forma incorrecta al 20.5 % de los casos, que es un valor alto, pero como se señala en el artículo Predicting Hotel Bookings Cancellation With a Machine Learning Classification Model (Antonio, Almeida, & Nunes, 2017) los clientes han variado mucho a lo largo del tiempo, por lo que cogiendo la muestra completa es asumible que pueda haber un error más alto de lo esperado a la hora de clasificar.
+
+
+```{r, echo = FALSE, results = 'hide'}
+mean(ifelse(bookings_glm.test$IsCanceled != predicted.modelo1.outsample, 1, 0))
+```
+
+# CURVA ROC
+
+```{r, echo = FALSE, warning = FALSE}
+roc.plot(bookings_glm.test$IsCanceled == '1', prob.modelo1.outsample)$roc.vol
+```
+
+La Curva Roc es utilizada para ver lo bueno que es el modelo de clasificación elaborado a través de la regresión logística. Examinando el área que queda por debajo de la curva representada, vemos que tiene un valor de 0.82, por lo que podemos volver a señalar que es un buen modelo de clasificación, ya que se encuentra por encima de 0.8. Este valor, cuanto más cercano a 1 mejor es, siendo un muy buen modelo los que superan el 0.9.
+
+# Conclusiones
+
+
+El modelo de predicción planteado a través de una regresión logística, tras realizar una selección de variables con elastic net, establecer un cut-off mediante una búsqueda Grid y unos costes para los casos mal predichos (falsos negativos y falsos positivos), obtiene un accuracy de 0.795 sobre una muestra de test que representa el 20 % de la muestra original obtenidos de forma aleatoria. El modelo fue entrenado con el 80 % restante de la muestra. Se ha detectado que no hay overfitting en el modelo, por lo que se puede afirmar que dicho modelo es Bueno para el objetivo planteado, ya que, además, se obtiene un área bajo la curva ROC de 0.82.
+
+
+
+
+
+
+
+
+

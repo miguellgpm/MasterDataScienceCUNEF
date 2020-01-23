@@ -1,0 +1,345 @@
+---
+title: "Series temporales"
+author: "Miguel López Garralón"
+date: "16/1/2020"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, message = FALSE, warning = FALSE}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(forecast)
+library(xts)
+library(tseries)
+library(ggplot2)
+library(ggfortify) #Plot Monthplot
+```
+
+
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+setwd("C:/Users/migue/Desktop/CUNEF/Prediccion/Examen")
+```
+
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+bookings_TS <- read_csv("../data/bookings_TS.csv", col_types = cols(ExpectedDate = col_date(format = "%Y-%B-%d"), X1 = col_skip()))
+```
+
+# Resumen
+
+Con el uso de un modelo ARIMA seleccionado mediante Cross-Validation se ha predicho el número de reservas hoteleras que se producirán por día. El modelo obtenido es un ARIMA ARIMA(1,1,4)(0,1,0)[52]. Dicho modelo no refleja unos resultados similares a los valores reales en la parte de test, por lo que no se podría tener en cuenta a la hora de tomar decisions de negocio en base a él. Se debe buscar otro tipo de modelo de predicción de series temporales para resolver dicho problema.
+
+# Objetivo
+
+El objetivo de esta investigación es poder predecir el número de reservas que se van a realizar cada día sobre las habitaciones de un hotel. Para ello se empleará un modelo ARIMA.
+
+
+
+```{r}
+bookings_TS$ExpectedDate <- bookings_TS$ExpectedDate - bookings_TS$LeadTime
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+bookings_TS$reservas <- 1
+```
+
+```{r, message = FALSE, warning = FALSE}
+temp_serie <- bookings_TS %>%
+  group_by(ExpectedDate) %>%
+  summarise(reservas = sum(reservas))  
+```
+
+```{r}
+temp_serie
+```
+
+
+```{r}
+temp_serie <- temp_serie[52:967,]
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+temp_serie <- xts(temp_serie$reservas,
+                  order.by = temp_serie$ExpectedDate, frequency = 365.25)
+```
+
+```{r, message = FALSE, warning = FALSE}
+weekly <- apply.weekly(temp_serie, sum)
+```
+
+
+
+```{r, message = FALSE, warning = FALSE}
+
+#Data Size
+nObs <- length(weekly)
+
+
+oweekly0 <- window(weekly, start = index(weekly[1]),
+                  end = index(weekly[nObs]))
+```
+
+# Serie observada
+
+```{r, message = FALSE, warning = FALSE}
+autoplot(oweekly0)
+```
+
+Debido a que la última semana sólo está compuesta por cuatro días, se procederá a eliminar este último registro, ya que de no ser así se produciría un sesgo a la hora de predecir debido a que hay un menor número de reservas en esa semana de las que debería, tal y como se puede observar en el gráfico superior.
+
+En el gráfico 2 se puede ver la evolución del número de reservas por cada semana. Se han eliminado las 4 últimas semanas en la serie que se muestra para poder realizar la predicción de dichas semanas y poder comprobar la eficacia del modelo.
+
+Además, se ha establecido un método de Cross Validation por el cual se realiza la predicción sobre 4 series temporales diferentes, aunque todas ellas son la misma. Todas las series temporales provienen de los datos originales, es decir, de la serie temporal del gráfico 1. La diferencia es que la primera serie temporal cuenta con 137 observaciones, de las cuales se eliminan las 4 últimas para realizar la predicción y comparar, mientras que en la segunda se cuenta con 133 observaciones en lugar de 137, ya que se han eliminado de forma permanente las 4 últimas que sirivieron anteriormente para realizar la predicción de la primera serie temporal. En el caso de la segunda serie temporal, se vuelven a eliminar las 4 últimas semanas de la serie, es decir, de la 129 a la 125, y dichas semanas servirán para comprobar la predicción, al igual que en la primera serie temporal pero contando con menos registros. Este proceso se realiza análogamente para la tercera y cuarta serie temporal, de forma que la cuarta serie temporal cuenta únicamente con 125 observaciones, de las cuales, las cuatro últimas sirven para realizar la predicción.
+
+Este proceso de Cross Validation se realiza así ya que no pueden seleccionarse casos al hacer como ocurre en otros modelos que pueden requerir Cross-Validation, ya que en las series temporales la progresión en el tiempo es un elemento básico a tener en cuenta, por lo tanto las observaciones que se seleccionan para el test deben ser consecutivas y de la parte final de la serie para que tenga sentido predecir sobre ellas con los datos previos.
+
+
+
+```{r, message = FALSE, warning = FALSE}
+
+weekly <- weekly[1:137,]
+
+#Select number of observation to compare forecast
+cOmit <- 4
+
+#Data Size
+nObs <- length(weekly)
+
+
+oweekly <- window(weekly, start = index(weekly[1]),
+                  end = index(weekly[nObs - cOmit]))
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly2 <- weekly[1:133,]
+
+#Select number of observation to compare forecast
+cOmit <- 4
+
+#Data Size
+nObs <- length(weekly2)
+
+
+oweekly2 <- window(weekly2, start = index(weekly2[1]),
+                  end = index(weekly2[nObs - cOmit]))
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly3 <- weekly[1:129,]
+
+#Select number of observation to compare forecast
+cOmit <- 4
+
+#Data Size
+nObs <- length(weekly3)
+
+
+oweekly3 <- window(weekly3, start = index(weekly3[1]),
+                  end = index(weekly3[nObs - cOmit]))
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly4 <- weekly[1:125,]
+
+#Select number of observation to compare forecast
+cOmit <- 4
+
+#Data Size
+nObs <- length(weekly4)
+
+
+oweekly4 <- window(weekly4, start = index(weekly4[1]),
+                  end = index(weekly4[nObs - cOmit]))
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly_ts <- ts(oweekly, frequency = 365.25/7)
+weekly_ts2 <- ts(oweekly2, frequency = 365.25/7)
+weekly_ts3 <- ts(oweekly3, frequency = 365.25/7)
+weekly_ts4 <- ts(oweekly4, frequency = 365.25/7)
+```
+
+Tras realizar la eliminación de la última semana, la primera serie temporal se vería como en el gráfico 3.
+
+```{r}
+autoplot(weekly)
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+plot(decompose(weekly_ts))
+```
+
+Tras realizar la descomposición de los elementos de la serie temporal, se aprecia que existe tendencia y varianza, y también parece haber estacionalidad. Se aplicará un modelo Auto Arima, el cual tiene en cuenta todos estos elementos y devuelve el mejor modelo posible.
+
+
+# Modelos AUTOARIMA con Cross-Validation
+
+
+```{r, message = FALSE, warning = FALSE}
+##Plot Serie
+
+df_new <- data.frame(value = as.vector(weekly_ts),
+                     time = time(weekly_ts))
+ggplot(df_new) +
+  geom_point(aes(x = time, y = value)) +
+  geom_line(aes(x = time, y = value)) +
+  ylab("Reservas") +
+  ggtitle("Reservas Semanales") +
+  xlab("Semanas")
+```
+
+
+
+```{r, message = FALSE, warning = FALSE}
+##Plot Serie
+
+df_new2 <- data.frame(value = as.vector(weekly_ts2),
+                     time = time(weekly_ts2))
+ggplot(df_new2) +
+  geom_point(aes(x = time, y = value)) +
+  geom_line(aes(x = time, y = value)) +
+  ylab("Reservas") +
+  ggtitle("Reservas Semanales") +
+  xlab("Semanas")
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+##Plot Serie
+
+df_new3 <- data.frame(value = as.vector(weekly_ts3),
+                     time = time(weekly_ts3))
+ggplot(df_new3) +
+  geom_point(aes(x = time, y = value)) +
+  geom_line(aes(x = time, y = value)) +
+  ylab("Reservas") +
+  ggtitle("Reservas Semanales") +
+  xlab("Semanas")
+```
+
+
+
+```{r, message = FALSE, warning = FALSE}
+##Plot Serie
+
+df_new4 <- data.frame(value = as.vector(weekly_ts4),
+                     time = time(weekly_ts4))
+ggplot(df_new4) +
+  geom_point(aes(x = time, y = value)) +
+  geom_line(aes(x = time, y = value)) +
+  ylab("Reservas") +
+  ggtitle("Reservas Semanales") +
+  xlab("Semanas")
+```
+
+
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly_arima <- auto.arima(weekly_ts)
+summary(weekly_arima)
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly_arima2 <- auto.arima(weekly_ts2)
+summary(weekly_arima2)
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly_arima3 <- auto.arima(weekly_ts3)
+summary(weekly_arima3)
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+weekly_arima4 <- auto.arima(weekly_ts4)
+summary(weekly_arima4)
+```
+
+```{r, message = FALSE, warning = FALSE}
+cat(weekly_arima$bic, weekly_arima2$bic, weekly_arima3$bic, weekly_arima4$bic)
+```
+
+Para poder comparar qué modelo ARIMA es el mejor de los cuatro se observa cuál de ellos tiene el menor BIC. Debido a esto, seleccionamos el cuarto modelo, ya que su valor BIC es de 890.88.
+
+
+```{r, message = FALSE, warning = FALSE}
+#residual analysis
+ggtsdisplay(weekly_arima4$residuals)
+```
+
+# Predicción
+
+El modelo ARIMA obtenido es estacional, tal y como cabía suponer tras haber visto los gráficos superiores y con el conocimiento de que las reservas hoteleras dependen de los periodos vacacionales y, en muchas ocasiones, del buen tiempo, estando ambas casuísticas condicionadas por el momento en el tiempo.
+
+En concreto, el maeor modelo ARIMA obtenido es ARIMA(1,1,4)(0,1,0)[52]. Esto implica que para que la serie sea no estacional hace falta aplicarle una diferencia a la serie temporal, esto se puede observar viendo la segunda parte de el modelo ARIMA (el segundo paréntesis). Por otro lado, la primera parte del modelo cuenta con más elementos, esta parte es la relacionada con la estacionaridad de la serie temporal. Para que la serie no sea estacionaria es necesario aplicarle 1 retardos y una diferencia, sin embargo el tercer elemento de la parte de la estacionaridad es 4, lo que significa que los errores de la serie dependen de los errores de las 4 semanas previas.
+
+
+```{r, message = FALSE, warning = FALSE}
+autoplot(forecast(weekly_arima4, 4))
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+fweekly.arima_final <- forecast(weekly_arima4, 4)
+
+ggplot(df_new4) +
+  geom_point(aes(x = time, y = value)) +
+  geom_line(aes(x = time, y = value)) +
+  geom_forecast(fweekly.arima_final, alpha = 0.4) +
+  ggtitle("AUTOARIMA: Predicción Reservas Hotel")
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+fweekly.arima_final
+```
+
+
+```{r, message = FALSE, warning = FALSE, results = 'hide'}
+tail(weekly4, 4)
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+fweekly.arima_final <- as.data.frame(fweekly.arima_final)
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+tabla_final <- cbind(tail(weekly4, 4), fweekly.arima_final[1:4, 1])
+names(tabla_final) = c('Valor real', 'Prediccion')
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+tabla_final
+```
+
+```{r, message = FALSE, warning = FALSE}
+summary(weekly_arima4)
+```
+
+# Conclusiones
+
+El modelo ARIMA obtenido no predice de forma precisa las reservas que van a realizarse cada día para el hotel. A pesar de haberse realizado Cross-Validation y elegir el que menor BIC presentaba, no es suficiente como para tener una predicción fiable y, por tanto, un modelo lo suficientemente bueno como para poder tomar decisiones de negocio en base a él.
+
+
