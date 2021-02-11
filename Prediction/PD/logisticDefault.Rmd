@@ -1,0 +1,493 @@
+---
+title: "Logistic Regression"
+author: "Miguel López Garralón"
+date: "4/11/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, echo = FALSE, message = FALSE, warning = FALSE}
+library(readr)
+library(rsample)
+library(dplyr)
+library(ggplot2)
+library(skimr)
+library(tidyverse)
+library(corrplot)
+library(glmnet)
+library(ISLR)
+library(boot)
+library(PerformanceAnalytics)
+library(dummies) # crete dummies
+library(verification) # curva ROC
+```
+
+
+```{r load data, echo = FALSE}
+loan2 <- read_csv("../data/loan3.csv", 
+col_types = cols(int_rate = col_number(), 
+revol_util = col_number(), term = col_number()))
+```
+
+
+```{r semilla, echo = FALSE}
+set.seed(02112019)
+```
+
+# Objetivo
+
+El objetivo de esta investigación es poder identificar la probabilidad de cometer fraude por parte de los clientes de un banco. A partir del establecimiento de dichas probabilidades, se busca poder clasificar a los clientes actuales o que ya poseen un crédito con otra entidad dentro de grupo de riesgo de fraude y los que no lo cometen.
+
+# Análisis utilizado
+
+El tipo de análisis utilizado será un modelo de regresión logística.
+La variable a predecir tendrá dos valores:
+
+- 1: Impago
+- 0: No comete impago
+
+```{r, echo = FALSE, results = 'hide'}
+loan2$loan_status <- as.factor(loan2$loan_status)
+levels(loan2$loan_status)
+```
+
+```{r, echo = FALSE, results = 'hide'}
+table(loan2$loan_status)
+```
+
+
+```{r dummy dep, echo = FALSE, results = 'hide'}
+loan2$loan_status <- as.numeric(loan2$loan_status)
+loan2$loan_status[loan2$loan_status == 1 | loan2$loan_status == 3 | loan2$loan_status == 4] <- 1
+loan2$loan_status[loan2$loan_status == 2 | loan2$loan_status == 5 | loan2$loan_status == 6 | loan2$loan_status == 7 | loan2$loan_status == 8 | loan2$loan_status == 9 | loan2$loan_status == 10] <- 0
+class(loan2$loan_status)
+```
+
+# Variables del modelo
+
+1. loan_status: La variable a predecir ya descrita anteriormente
+2. annual_inc: Ingresos anuales
+3. dti: ratio crediticio
+4. funded_amnt: Cantidad inicial
+5. Grade: Grado de calidad del perfil de crédito de la persona
+6. home_ownership: Tipo de propiedad o no de residencia
+7. int_rate: Interés del préstamo solicitado
+8. loan_amnt: Cantidad solicitada para el préstamo
+9. revol_util: porcentaje de utilización de la línea de crédito
+10. term: Tiempo a devolver el préstamo
+11. total_acc: Acceso al crédito
+12. total_pymnt: Total pagado del crédito hasta el momento
+13. open_acc: dinero adelantado
+14. delinq_2yrs: veces que ha delinquido en los últimos 2 años
+
+```{r, echo = FALSE, results = 'hide'}
+str(loan2)
+```
+
+
+```{r factor, echo = FALSE}
+loan2$home_ownership <- as.factor(loan2$home_ownership)
+loan2$grade <- as.factor(loan2$grade)
+loan2$term <- as.factor(loan2$term)
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+loan2$loan_status <- as.factor(loan2$loan_status)
+```
+
+# Resumen de las variables numéricas
+
+```{r numerics, echo = FALSE}
+loan_numerics <- dplyr::select(loan2, c(-grade, -home_ownership, -loan_status, -term))
+skim(loan_numerics)
+```
+
+# EDA
+
+Desviación típica de las varaibles numéricas.
+
+```{r, echo = FALSE}
+sapply(loan_numerics, sd)
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, annual_inc)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, dti)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, loan_amnt)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, funded_amnt)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, int_rate)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, revol_util)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, total_acc)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, total_pymnt)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, open_acc)) + geom_boxplot()
+```
+
+
+```{r, echo = FALSE}
+ggplot(loan2, aes(loan_status, delinq_2yrs)) + geom_boxplot()
+```
+
+
+Se puede ver que tienen magnitudes muy dispares, por lo que más adelante se llevará a cabo un proceso de escalado de las variables numéricas.
+
+## Correlación
+
+```{r, echo = FALSE}
+correlacion <- round(cor(loan_numerics), 1)
+
+corrplot(correlacion, method = "number", type = "upper")
+```
+
+
+## Tratamiento categóricas
+
+```{r transform home_ownership, echo = FALSE}
+loan2$home_ownership <- as.numeric(loan2$home_ownership)
+loan2$home_ownership[loan2$home_ownership == 1 | loan2$home_ownership == 4] <- 1
+loan2$home_ownership[loan2$home_ownership == 2] <- 2
+loan2$home_ownership[loan2$home_ownership == 3] <- 3
+loan2$home_ownership[loan2$home_ownership == 5] <- 4
+loan2$home_ownership[loan2$home_ownership == 6] <- 5
+loan2$home_ownership <- as.factor(loan2$home_ownership)
+levels(loan2$home_ownership) <- c("Other", "Mortgage", "None", "Own", "Rent")
+```
+
+En el caso de la variable de propiedad de residencia, se ha decidido incluir al factor "Any" dentro del factor "Other", ya que del primero había muy pocos casos (menos de 5).
+
+La distribución de personas que cometen impago y los que no en función de la propiedad de una residencia es la siguiente:
+
+```{r, echo = FALSE}
+xtabs(~loan_status + home_ownership, data = loan2)
+```
+
+En caso del grado de asignado al crédito y el impago o no es la siguiente:
+
+```{r, echo = FALSE}
+xtabs(~loan_status + grade, data = loan2)
+```
+
+Por último, tiempo a devolver el crédito y el impago o no es la siguiente:
+
+```{r, echo = FALSE}
+xtabs(~loan_status + term, data = loan2)
+```
+
+
+# Estandarización de las variables numéricas
+
+```{r estandarizacion, echo = FALSE}
+loan_escalada <- mutate_if(loan2, is.numeric, scale, center = FALSE)
+head(loan_escalada, 10)
+```
+
+# Creación de dummies para las categóricas
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+loan_escalada <- dummy.data.frame(loan_escalada)
+loan_escalada <- dummy.data.frame(loan_escalada,
+                                  names = "home_ownership")
+loan_escalada <- dummy.data.frame(loan_escalada,
+                                  names = "grade")
+loan_escalada <- dummy.data.frame(loan_escalada,
+                                  names = "term")
+loan2 <- dummy.data.frame(loan2)
+loan2 <- dummy.data.frame(loan2, names = "home_ownership")
+loan2 <- dummy.data.frame(loan2, names = "grade")
+loan2 <- dummy.data.frame(loan2, names = "term")
+head(loan_escalada, 10)
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+skim(loan_escalada)
+```
+
+# Modelo 1 (variables estandarizadas)
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+modelo1 <- glm(loan_status ~ . -gradeA -home_ownershipMortgage -term36,
+              family = "binomial", data = loan_escalada)
+summary(modelo1)
+```
+
+
+## ODDS Ratio modelo 1
+
+
+```{r ODDS RATIO, echo = FALSE}
+exp(coef(modelo1))
+```
+
+## Probabilidades modelo 1
+
+```{r probabilidades, echo = FALSE}
+exp(coef(modelo1)) / (1 + exp(coef(modelo1)))
+```
+
+# Modelo 2 (variables sin estandarizadas)
+
+```{r, echo = FALSE, warning = FALSE}
+modelo2 = glm(loan_status ~ . -gradeA -home_ownershipMortgage -term36,
+              family = "binomial", data = loan2)
+summary(modelo2)
+```
+
+
+## ODDS Ratio Modelo 2
+
+```{r, echo = FALSE}
+exp(coef(modelo2))
+```
+
+## Probabilidad modelo 2
+
+```{r, echo = FALSE}
+exp(coef(modelo2)) / (1 + exp(coef(modelo2)))
+```
+
+# Split in train and test
+
+```{r split, echo = FALSE, results = 'hide'}
+train <- sample(nrow(loan_escalada), 0.7 * nrow(loan_escalada))
+
+loan.train <- loan_escalada[train,]
+
+loan.test <- loan_escalada[-train,]
+
+
+nrow(loan.train)
+```
+
+## Model with train and test
+
+Cutt off en 0.7
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+glm.fit <- glm(loan_status ~ . -gradeA -home_ownershipMortgage -term36,
+              family = "binomial", data = loan.train)
+
+# Predecir el test.  
+glm.probs <- predict(glm.fit, loan.test, type = "response")
+
+# Crear un vector para guardar los resultados (No default) 
+glm.pred <- rep("0", nrow(loan.test))
+
+# Reemplazar NO por YES cuando la probabilidad es mayor del 70%
+glm.pred[glm.probs > .7] = "1"
+
+# Crear un vector con los resultados
+defaultVector <- loan.test$loan_status 
+
+
+# Calculala media  
+mean(glm.pred == defaultVector)
+```
+
+## K fold
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+# Estimar el modelo
+glm.fit1 <- glm(loan_status ~ . -gradeA -home_ownershipMortgage -term36,
+              family = binomial, data = loan.train)
+
+# Crear un vector para guardar los resultados
+cv.error <- rep(0,3)
+
+
+# Guardar los resultados para cada K  validation set. K= {3,5,10} 
+cv.error[1] <- cv.glm(loan.train, glm.fit1, K = 3)$delta[1]
+cv.error[2] <- cv.glm(loan.train, glm.fit1, K = 5)$delta[1]
+cv.error[3] <- cv.glm(loan.train, glm.fit1, K = 10)$delta[1]
+
+cv.error
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+1 - mean(cv.error)
+```
+
+El porcentaje de los que acierta es del 95.2 %.
+
+
+## Histograma sobre la distribución de la probabilidad de cometer impago
+
+
+```{r, echo = FALSE}
+hist(predict(glm.fit1,type = "response"))
+```
+
+
+```{r, echo = FALSE}
+table(predict(glm.fit1, type = "response") > 0.7)
+```
+
+
+Bajamos el cutoff a 0.25 tras ver el gráfico
+
+```{r, echo = FALSE}
+prob.glm.fit1.insample <- predict(glm.fit1, type = "response")
+predicted.glm.fit1.insample <- prob.glm.fit1.insample > 0.25
+predicted.glm.fit1.insample <- as.numeric(predicted.glm.fit1.insample)
+```
+
+
+# Matriz de confusión
+
+## Dentro de la muestra
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+library(caret)
+confusionMatrix(data = as.factor(predicted.glm.fit1.insample) ,
+                reference = as.factor(loan.train$loan_status), dnn = c("Predicted", "Real cases"))
+```
+
+
+```{r, echo = FALSE}
+mean(ifelse(loan.train$loan_status != predicted.glm.fit1.insample, 1, 0))
+```
+
+## Fuera de la muestra
+
+```{r, echo = FALSE}
+prob.glm.fit1.outsample <- predict(glm.fit1,
+                                   loan.test, type = "response")
+predicted.glm.fit1.outsample <-  prob.glm.fit1.outsample > 0.25
+predicted.glm.fit1.outsample <- as.numeric(predicted.glm.fit1.outsample)
+table(loan.test$loan_status, predicted.glm.fit1.outsample,
+      dnn = c("Truth","Predicted"))
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+confusionMatrix(data = as.factor(predicted.glm.fit1.outsample),
+                reference = as.factor(loan.test$loan_status), dnn = c("Predicted", "Real cases"))
+```
+
+```{r, echo = FALSE}
+mean(ifelse(loan.test$loan_status != predicted.glm.fit1.outsample, 1, 0))
+```
+
+# CURVA ROC
+
+```{r, echo = FALSE, warning = FALSE}
+roc.plot(loan.test$loan_status == '1', prob.glm.fit1.outsample)$roc.vol
+```
+
+# Obtener el cut off óptimo 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+#define the searc grid from 0.01 to 0.99
+searchgrid = seq(0.01, 0.99, 0.01)
+#result is a 99x2 matrix, the 1st col stores the cut-off p, the 2nd column stores the cost
+result = cbind(searchgrid, NA)
+#in the cost function, both r and pi are vectors, r=truth, pi=predicted probability
+cost1 <- function(r, pi){
+  weight1 = 10
+  weight0 = 1
+  c1 = (r == 1) & (pi < pcut) #logical vector - true if actual 1 but predict 0
+  c0 = (r == 0) & (pi > pcut) #logical vector - true if actual 0 but predict 1
+  return(mean(weight1 * c1 + weight0 * c0))
+}
+glm.fit1 <- glm(loan_status ~ . -gradeA -home_ownershipMortgage -term36,
+              family = binomial, data = loan.train); 
+prob <- predict(glm.fit1, type = "response")
+for(i in 1:length(searchgrid)) 
+{
+  pcut <- result[i,1]
+  #assign the cost to the 2nd col
+  result[i,2] <- cost1(loan.train$loan_status, prob)
+}
+plot(result, ylab = "Cost in Training Set")
+```
+
+```{r, echo = FALSE}
+result[which.min(result[,2]),]
+```
+
+
+# Obtener el cut off óptimo con weight1 = 2
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+#define the searc grid from 0.01 to 0.99
+searchgrid = seq(0.01, 0.99, 0.01)
+#result is a 99x2 matrix, the 1st col stores the cut-off p, the 2nd column stores the cost
+result = cbind(searchgrid, NA)
+#in the cost function, both r and pi are vectors, r=truth, pi=predicted probability
+cost1 <- function(r, pi){
+  weight1 = 2
+  weight0 = 1
+  c1 = (r == 1) & (pi < pcut) #logical vector - true if actual 1 but predict 0
+  c0 = (r == 0) & (pi > pcut) #logical vector - true if actual 0 but predict 1
+  return(mean(weight1 * c1 + weight0 * c0))
+}
+glm.fit2 <- glm(loan_status ~ . -gradeA -home_ownershipMortgage -term36,
+              family = binomial, data = loan.train); 
+prob <- predict(glm.fit2, type = "response")
+for(i in 1:length(searchgrid)) 
+{
+  pcut <- result[i,1]
+  #assign the cost to the 2nd col
+  result[i,2] <- cost1(loan.train$loan_status, prob)
+}
+plot(result, ylab = "Cost in Training Set")
+```
+
+
+```{r, echo = FALSE}
+result[which.min(result[,2]),]
+```
+
+```{r, echo = FALSE}
+prob.glm.fit2.outsample <- predict(glm.fit2,
+                                   loan.test, type = "response")
+predicted.glm.fit2.outsample <-  prob.glm.fit2.outsample > 0.73
+predicted.glm.fit2.outsample <- as.numeric(predicted.glm.fit2.outsample)
+table(loan.test$loan_status, predicted.glm.fit2.outsample,
+      dnn = c("Truth","Predicted"))
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+confusionMatrix(data = as.factor(predicted.glm.fit2.outsample),
+                reference = as.factor(loan.test$loan_status), dnn = c("Predicted", "Real cases"))
+```
+
