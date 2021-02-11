@@ -1,0 +1,254 @@
+---
+title: "Regularización Salarios NBA"
+author: "Miguel López Garralón"
+date: "16/10/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r echo = FALSE} 
+
+library(readr)
+library(rsample) 
+library(glmnet)
+library(dplyr)
+library(ggplot2)
+```
+
+
+```{r}
+nba <- read_csv("nba.csv")
+View(nba)
+```
+
+Vemos los casos que tienen valores NA para decidir su tratamiento.
+
+```{r}
+perdidos <- filter(nba, is.na(nba$FTr), is.na(nba$`TS%`), is.na(nba$`3PAr`), is.na(nba$`TOV%`))
+perdidos
+```
+
+Al ser únicamente dos casos se eliminan de la base de datos.
+
+```{r}
+nba <- na.omit(nba)
+```
+
+Variable endógena: Salario (Salary)
+
+Variables exógenas: 
+- Edad (Age): se presupone que a mayor edad mayor salario 
+- Edad elevado al cuadrado: considero que a partir de cierta edad ya no aumenta el salario
+- Número del draft (NBA_DraftNumber): a menor número en el draft mayor salario
+- Contribución a las victorias del equipo (WS): a mayor contribución a las victorias del equipo mayor salario
+- Contribución a las victorias del equipo al cuadrado: a partir de cierto nivel de aportación a las victorias del equipo ya no afecta al salario
+- Porcentaje de participación en el juego (`USG%`): A mayor participación mayor salario
+- Valor sobre jugador de reemplazo (VORP): a mayor VORP mayor salario
+- Valor sobre jugador de reemplazo al cuadrado: a partir de cierto nivel de VORP ya no afecta al salario
+- Efectividad de tiro (`TS%`): a mayor efectividad de tiro mayor salario
+- Efectividad asistencias (`AST%`): a mayor efectividad de asistencias mayor salario
+- Interacción de WS y VORP (WS:VORP): considero que están relacionadas estas dos variables, a mayores valores de WS y VORP mayor será el salario del jugador, ya que implicará que el jugador en cuestión si contribuye a las victorias del equipo y tiene un alto valor de reemplazo, combinadas, provocarán que tenga un mayor salario
+- Minutos por partido (MP): A mayor número de minutos jugados mayor salario
+- Minutos por partido al cuadrado: A partir de cierto número de minutos se considera que el salario no aumentará
+
+Se muestra a continuación una visión general de los estadísticos más básicos de las variables seleccionadas.
+
+```{r}
+nba_resumen <- select(nba, Salary, Age, NBA_DraftNumber, `USG%`, VORP, WS, `AST%`, `TS%`, MP)
+summary(nba_resumen)
+```
+
+# Curvas de densidad y nube de puntos entre variables
+
+```{r}
+library(car)
+
+scatterplotMatrix(nba_resumen)
+```
+
+Se puede ver que las variables no siguen una distribución normal.
+
+# Análisis de correlaciones
+
+Se analizará cuál es la relación entre las variables seleccionadas para el modelo, ya que si están correlacionadas presumiblemente tendrán relación entre sí.
+
+```{r}
+library(GGally)
+library(corrplot)
+library(PerformanceAnalytics)
+```
+
+```{r}
+round(cor(nba_resumen),2) 
+```
+
+```{r}
+cor(as.matrix(nba_resumen))
+```
+
+Gráfico de correlaciones
+
+En la primera fila del siguiente gráfico se puede ver de manera sencilla el grado de correlación de las variables explicativas con el Salario.
+
+```{r}
+correlacion <- round(cor(nba_resumen), 1)
+
+corrplot(correlacion, method = "number", type = "upper")
+```
+
+La correlación del salario con el resto de variables no llega en ningún caso al valor 0.7. A pesar de esto, si nos fijamos también en la primera fila del siguiente gráfico, se puede apreciar que todas las variables explicativas tienen el mayor grado de significación de correlación con el salario, aunque la fuerza de dicha correlación varíe y no sea muy alta en ninguno de los casos.
+
+```{r}
+chart.Correlation(nba_resumen, histogram = F, pch = 19)
+```
+
+
+# Training y test split
+
+```{r}
+set.seed(123)
+nba_split <- initial_split(nba, prop = .7, strata = "Salary")
+nba_train <- training(nba_split)
+nba_test  <- testing(nba_split)
+```
+
+
+Creación de matrices
+
+```{r}
+nba_train_x <- model.matrix(Salary ~ Age + I(Age * Age) + NBA_DraftNumber + `USG%` + VORP + I(VORP * VORP) + WS + I(WS * WS) + WS:VORP + `AST%` + `TS%` + MP + I(MP * MP), data = nba_train)[, -1]
+nba_train_y <- log(nba_train$Salary)
+
+nba_test_x <- model.matrix(Salary ~ Age + I(Age * Age) + NBA_DraftNumber + `USG%` + VORP + I(VORP * VORP) + WS + I(WS * WS) + WS:VORP + `AST%` + `TS%` + MP + I(MP * MP), data = nba_test)[, -1]
+nba_test_y <- log(nba_test$Salary)
+
+dim(nba_train_x)
+```
+
+Cross-Validation para obtener alpha y lambda
+
+```{r}
+library(caret)
+
+train_control <- trainControl(method = "cv", number = 10)
+
+caret_mod <- train(
+  x = nba_train_x,
+  y = nba_train_y,
+  method = "glmnet",
+  preProc = c("center", "scale", "zv", "nzv"),
+  trControl = train_control,
+  tuneLength = 10
+)
+
+caret_mod
+```
+
+
+Hemos obtenido que el mejor modelo es en el que alpha = 1. Por lo que estamos en una situación de regularización por Lasso.
+
+```{r}
+cv_lasso <- cv.glmnet(nba_train_x, nba_train_y, alpha = 1)
+min(cv_lasso$cvm)
+```
+
+Y finalmente obtenemos la media de MSE en la muestra de test de el modelo.
+
+```{r}
+pred <- predict(cv_lasso, s = cv_lasso$lambda.min, nba_test_x)
+media_error_modelo1 <- mean((nba_test_y - pred)^2)
+media_error_modelo1
+```
+
+Vemos los valores de los coeficientes de las variables explicativas al reajustar el modelo lasso. 
+En dicho modelo, sólo se mantienen con un coeficiente superior a 0 las variables de edad, número del draft, contribución a las victorias y los minutos jugados.
+
+```{r}
+predict(cv_lasso, type = "coefficients", s = cv_lasso$lambda.min)
+```
+
+
+# Comparación con un modelo teniendo en cuenta todas las variables de la base de datos a excepción del nombre de los jugadores, el país de procedencia y el equipo
+
+```{r}
+nba_train_x3 <- model.matrix(Salary ~. -Player -NBA_Country -Tm, data = nba_train)[, -1]
+nba_train_y3 <- log(nba_train$Salary)
+
+nba_test_x3 <- model.matrix(Salary~. -Player -NBA_Country -Tm, data = nba_test)[, -1]
+nba_test_y3 <- log(nba_test$Salary)
+
+dim(nba_train_x3)
+```
+
+Se realiza cross-validation con K = 10 para obtener los valores de alpha y lambda.
+
+```{r}
+library(caret)
+
+train_control3 <- trainControl(method = "cv", number = 10)
+
+caret_mod3 <- train(
+  x = nba_train_x3,
+  y = nba_train_y3,
+  method = "glmnet",
+  preProc = c("center", "scale", "zv", "nzv"),
+  trControl = train_control3,
+  tuneLength = 10
+)
+
+caret_mod3
+```
+
+Obtenemos los valores de alpha y lambda.
+
+```{r}
+cv_elastic_net <- cv.glmnet(nba_train_x3, nba_train_y3, alpha = 0.7)
+min(cv_elastic_net$cvm)
+```
+
+Obtenemos la media de MSE para la muestra de test.
+
+```{r}
+pred3 <- predict(cv_elastic_net, s = cv_elastic_net$lambda.min, nba_test_x3)
+media_error_modelo3 <- mean((nba_test_y3 - pred3)^2)
+media_error_modelo3
+```
+
+Vemos los valores de los coeficientes de las variables explicativas al reajustar el modelo.
+En este segundo modelo, se mantienen con un coeficiente superior a 0 las variables de edad, número del draft, contribución a las victorias del equipo, los minutos jugados, la contribución en defensa a las victorias del equipo y el porcentaje de rebotes defensivos.
+
+```{r}
+predict(cv_elastic_net, type = "coefficients", s = cv_elastic_net$lambda.min)
+```
+
+
+Comparamos la media de error entre los dos modelos.
+
+```{r}
+modelo <- c("modelo1", "modelo2")
+test.MSE <- c(media_error_modelo1, media_error_modelo3)
+comparacion <- data.frame(modelo, test.MSE)
+
+ggplot(data = comparacion, aes(x = reorder(x = modelo, X = test.MSE), 
+                               y = test.MSE)) +
+geom_bar(stat = "identity", aes(fill = modelo)) +
+labs(x = "Modelo", y = "Test error(MSE)") +
+theme_bw() +
+coord_flip() +
+theme(legend.position = "none")
+```
+
+
+En este caso el mejor modelo obtenido es el planteado, ya que tiene una media de MSE al predecir inferior al segundo modelo analizado.
+
+Los coeficientes de las variables explicativas del primer modelo son las siguientes. Por lo tanto, dichas variables serán las necesarias a tener en cuenta a la hora de establecer el salario de un jugador.
+
+```{r}
+modelo1.coef <- predict(cv_lasso, type = "coefficients", s = cv_lasso$lambda.min)
+modelo1.coef
+```
+
